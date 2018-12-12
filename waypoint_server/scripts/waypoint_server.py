@@ -52,7 +52,7 @@ class WaypointServer:
 
         rospy.Subscriber("/clicked_point", PointStamped, self.insert_marker_callback)
         rospy.on_shutdown(self.clear_all_markers)
-        rospy.logwarn("The waypoint server is waiting for RViz run and to subscribe to {0}.".format(rospy.resolve_name("~edges")))
+        rospy.logwarn("The waypoint server is waiting for RViz to run and to be subscribed to {0}.".format(rospy.resolve_name("~edges")))
         while self.edge_line_publisher.get_num_connections() == 0:
             rospy.sleep(1.0)
 
@@ -180,7 +180,7 @@ class WaypointServer:
                 pass    # ignore
             else:
                 pos = feedback.pose.position
-                rospy.logdebug("Updateing pose of marker {3} to ({0},{1},{2})".format(pos.x, pos.y, pos.z, feedback.marker_name))
+                rospy.logdebug("Updating pose of marker {3} to ({0},{1},{2})".format(pos.x, pos.y, pos.z, feedback.marker_name))
                 # update database
                 # push to scene database
                 pstamped = PoseStamped()
@@ -242,9 +242,9 @@ class WaypointServer:
 
         # interactive menu for each marker
         menu_handler = MenuHandler()
-        menu_handler.insert("Connect/Disconnect", callback=self.process_feedback)
-        menu_handler.insert("Clear", callback=self.process_feedback)
-        menu_handler.insert("Remove", callback=self.process_feedback)
+        menu_handler.insert("Connect/Disconnect edge...", callback=self.process_feedback)
+        menu_handler.insert("Clear connected edges", callback=self.process_feedback)
+        menu_handler.insert("Remove marker", callback=self.process_feedback)
 
         # make a box which also moves in the plane
         control.markers.append(self._make_marker(int_marker))
