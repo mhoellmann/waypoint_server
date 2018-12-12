@@ -30,7 +30,7 @@ STATE_NONE = 2
 
 
 def euclidean_distance(point1, point2):
-    return math.sqrt((point2.x - point1.x)**2 + (point2.y - point1.y)**2 + (point2.y - point1.y)**2)
+    return math.sqrt((point2.x - point1.x)**2 + (point2.y - point1.y)**2 + (point2.z - point1.z)**2)
 
 
 class WaypointServer:
