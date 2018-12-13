@@ -20,14 +20,22 @@ from networkx import Graph
 import math
 import yaml
 
-MENU_CONNECT = 1
-MENU_CLEAR = 2
-MENU_REMOVE = 3
+# define menu entry item ids (starts from 1 [top menu item])
+MENU_CONNECT_EDGE = 1
+MENU_CONNECT_EDGE_DOOR = 2 
+MENU_DISCONNECT_EDGE = 3
+MENU_CLEAR = 4
+MENU_REMOVE = 5
 
+# define program states
 STATE_REGULAR = 0
 STATE_CONNECT = 1
-STATE_NONE = 2
+STATE_DISCONNECT = 2
+STATE_NONE = 3 
 
+# define edge types
+EDGE_REGULAR = 0
+EDGE_DOOR = 1
 
 def euclidean_distance(point1, point2):
     return math.sqrt((point2.x - point1.x)**2 + (point2.y - point1.y)**2 + (point2.z - point1.z)**2)
@@ -40,7 +48,8 @@ class WaypointServer:
         self.next_waypoint_id = 0
         self.next_edge_id = 0
         self.state = STATE_REGULAR
-        self.connect_first_marker = ""
+        self.connect_from_marker = ""
+        self.edge_type = EDGE_REGULAR
         self.edge_line_publisher = rospy.Publisher("~edges", MarkerArray, queue_size=10)
         self.marker_frame = rospy.get_param("~marker_frame", "map")
         self.uuid_name_map = {}
@@ -92,34 +101,37 @@ class WaypointServer:
         marker.color.a = 1.0
         return marker
 
-    def _make_edge(self, scale, begin, end):
-        marker = Marker()
-        marker.header.frame_id = self.marker_frame
-        marker.header.stamp = rospy.Time.now()
-        marker.ns = "waypoint_edges"
-        marker.id = self.next_edge_id
+    def _make_edge(self, scale, begin, end, edge_type=EDGE_REGULAR):
+        edge = Marker()
+        edge.header.frame_id = self.marker_frame
+        edge.header.stamp = rospy.Time.now()
+        edge.ns = "waypoint_edges"
+        edge.id = self.next_edge_id 
         self.next_edge_id += 1
-        marker.type = Marker.LINE_LIST
-        marker.action = Marker.ADD
-        marker.scale.x = scale * 0.45
-        marker.scale.y = scale * 0.45
-        marker.scale.z = scale * 0.45
-        marker.color.r = 0
-        marker.color.g = 0
-        marker.color.b = 1
-        marker.color.a = 1.0
-        marker.points.append(begin)
-        marker.points.append(end)
-        return marker
+        edge.type = Marker.LINE_LIST
+        edge.action = Marker.ADD
+        edge.scale.x = scale * 0.45
+        edge.scale.y = scale * 0.45
+        edge.scale.z = scale * 0.45
+        edge.color.r = 0
+        if edge_type == EDGE_DOOR:
+            edge.color.g = 1 
+        else:
+            edge.color.g = 0 
+        edge.color.b = 1
+        edge.color.a = 1.0
+        edge.points.append(begin)
+        edge.points.append(end)
+        return edge
 
     def _remove_marker(self, name):
-        self._clear_marker(name)
+        self._clear_marker_edges(name)
         self.waypoint_graph.remove_node(name)
         del self.uuid_name_map[name]
         self.server.erase(name)
         self.server.applyChanges()
 
-    def _clear_marker(self, name):
+    def _clear_marker_edges(self, name):
         # remove all edges to a waypoint
         edges = MarkerArray()
         to_remove = []
@@ -133,7 +145,7 @@ class WaypointServer:
             self.waypoint_graph.remove_edge(u, v)
         self.edge_line_publisher.publish(edges)    # publish deletion
 
-    def _connect_markers(self, u, v, cost=0.0):
+    def _disconnect_markers(self, u, v):
         if self.waypoint_graph.has_edge(u, v):
             # remove edge
             edges = MarkerArray()
@@ -142,16 +154,17 @@ class WaypointServer:
             edges.markers.append(marker)
             self.waypoint_graph.remove_edge(u, v)
             self.edge_line_publisher.publish(edges)  # publish deletion
-        else:
+    
+    def _connect_markers(self, u, v, cost=0.0, edge_type=EDGE_REGULAR):
             name_u = self.uuid_name_map[u]
             name_v = self.uuid_name_map[v]
             u_pos = self.server.get(u).pose.position
             v_pos = self.server.get(v).pose.position
-            #  insert edge
-            marker = self._make_edge(0.2, u_pos, v_pos)
-            marker.text = str(cost) if cost is not 0 else ""
+            # insert edge
+            edge = self._make_edge(0.2, u_pos, v_pos, edge_type)
+            edge.text = str(cost) if cost is not 0 else ""
             # insert edge into graph
-            self.waypoint_graph.add_edge(u, v, u=u, v=v, cost=cost, marker=marker)
+            self.waypoint_graph.add_edge(u, v, u=u, v=v, cost=cost, edge_type=edge_type, marker=edge)
             self.update_edges()
 
     def update_edges(self):
@@ -163,19 +176,29 @@ class WaypointServer:
     def process_feedback(self, feedback):
         if feedback.event_type == InteractiveMarkerFeedback.MENU_SELECT:
             handle = feedback.menu_entry_id
-            if handle == MENU_CONNECT:
+            if handle == MENU_CONNECT_EDGE:
                 self.state = STATE_CONNECT
-                self.connect_first_marker = feedback.marker_name
-
+                self.edge_type = EDGE_REGULAR
+                self.connect_from_marker = feedback.marker_name
+            elif handle == MENU_CONNECT_EDGE_DOOR:
+                self.state = STATE_CONNECT
+                self.edge_type = EDGE_DOOR
+                self.connect_from_marker = feedback.marker_name
+            elif handle == MENU_DISCONNECT_EDGE:
+                self.state = STATE_DISCONNECT
+                self.connect_from_marker = feedback.marker_name
             elif handle == MENU_CLEAR:
-                self._clear_marker(feedback.marker_name)
+                self._clear_marker_edges(feedback.marker_name)
             elif handle == MENU_REMOVE:
                 self._remove_marker(feedback.marker_name)
 
         elif feedback.event_type == InteractiveMarkerFeedback.MOUSE_UP:
             if self.state == STATE_CONNECT:
                 self.state = STATE_NONE
-                self._connect_markers(self.connect_first_marker, feedback.marker_name)
+                self._connect_markers(self.connect_from_marker, feedback.marker_name, edge_type=self.edge_type)
+            elif self.state == STATE_DISCONNECT:
+                self.state = STATE_NONE
+                self._disconnect_markers(self.connect_from_marker, feedback.marker_name)
             elif self.state == STATE_NONE:
                 pass    # ignore
             else:
@@ -242,7 +265,9 @@ class WaypointServer:
 
         # interactive menu for each marker
         menu_handler = MenuHandler()
-        menu_handler.insert("Connect/Disconnect edge...", callback=self.process_feedback)
+	menu_handler.insert("Connect normal edge...", callback=self.process_feedback)
+        menu_handler.insert("Connect door edge...", callback=self.process_feedback)
+        menu_handler.insert("Disconnect edge...", callback=self.process_feedback)
         menu_handler.insert("Clear connected edges", callback=self.process_feedback)
         menu_handler.insert("Remove marker", callback=self.process_feedback)
 
@@ -280,8 +305,10 @@ class WaypointServer:
             name = self.uuid_name_map[uuid]
             pos = self.server.get(uuid).pose.position
             data["waypoints"].update({uuid: {"name": name, "x": pos.x, "y": pos.y, "z": pos.z}})
-        for u, v, cost in self.waypoint_graph.edges(data='cost'):
-            data["edges"].append({'u': u, 'v': v, 'cost': cost})
+        for u, v, edge_data in self.waypoint_graph.edges(data=True):
+	    cost = edge_data['cost']
+	    edge_type = edge_data['edge_type']
+            data["edges"].append({'u': u, 'v': v, 'cost': cost, 'edge_type': edge_type})
 
         with open(filename, 'w') as f:
             yaml.dump(data, f, default_flow_style=False)
@@ -297,11 +324,11 @@ class WaypointServer:
             self.insert_marker(position=point, uuid=uuid, name=wp['name'])
 
         for edge in data["edges"]:
-            self._connect_markers(edge['u'], edge['v'], edge['cost'])
+            self._connect_markers(edge['u'], edge['v'], edge['cost'], edge['edge_type'])
 
     def remove_edge_service_call(self, request):
         if self.waypoint_graph.has_edge(request.u, request.v):
-            self._connect_markers(request.u, request.v)
+            self._disconnect_markers(request.u, request.v)
 
         return RemoveConnectionResponse()
 
