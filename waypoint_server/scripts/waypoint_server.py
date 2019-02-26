@@ -306,9 +306,18 @@ class WaypointServer:
 
     def save_waypoints_service(self, request):
         filename = request.file_name
-        self.save_waypoints_to_file(filename)
-        rospy.loginfo("Saved waypoints to {0}".format(filename))
-        return SaveWaypointsResponse()
+        response = SaveWaypointsResponse()
+        error_message = self.save_waypoints_to_file(filename)
+
+        if error_message == None:
+            response.success = True
+            response.message = "Saved waypoints to " + filename
+            rospy.loginfo("Saved waypoints to {0}".format(filename))
+        else:
+            response.success = False
+            response.message = str(error_message)
+            rospy.loginfo("Failed to save waypoints: {0}".format(error_message))
+        return response
 
     def load_waypoints_service(self, request):
         filename = request.file_name
@@ -317,7 +326,7 @@ class WaypointServer:
 
         if error_message == None:
             response.success = True
-            response.message = "Loaded waypoints successfully"
+            response.message = "Loaded waypoints from " + filename
             rospy.loginfo("Loaded waypoints from {0}".format(filename))
         else:
             response.success = False
@@ -326,18 +335,23 @@ class WaypointServer:
         return response
 
     def save_waypoints_to_file(self, filename):
-        data = {"waypoints": {}, "edges": []}
-        for uuid in self.waypoint_graph.nodes():
-            name = self.uuid_name_map[uuid]
-            pos = self.server.get(uuid).pose.position
-            data["waypoints"].update({uuid: {"name": name, "x": pos.x, "y": pos.y, "z": pos.z}})
-        for u, v, edge_data in self.waypoint_graph.edges(data=True):
-	    cost = edge_data['cost']
-	    edge_type = edge_data['edge_type']
-            data["edges"].append({'u': u, 'v': v, 'cost': cost, 'edge_type': edge_type})
+        error_message = None  # assume file location and contents are correct
+        try:
+            data = {"waypoints": {}, "edges": []}
+            for uuid in self.waypoint_graph.nodes():
+                name = self.uuid_name_map[uuid]
+                pos = self.server.get(uuid).pose.position
+                data["waypoints"].update({uuid: {"name": name, "x": pos.x, "y": pos.y, "z": pos.z}})
+            for u, v, edge_data in self.waypoint_graph.edges(data=True):
+                cost = edge_data['cost']
+                edge_type = edge_data['edge_type']
+                data["edges"].append({'u': u, 'v': v, 'cost': cost, 'edge_type': edge_type})
 
-        with open(filename, 'w') as f:
-            yaml.dump(data, f, default_flow_style=False)
+            with open(filename, 'w') as f:
+                yaml.dump(data, f, default_flow_style=False)
+        except Exception as e:
+            error_message = e
+        return error_message
 
     def load_waypoints_from_file(self, filename):
         error_message = None  # assume file location and contents are correct
