@@ -312,12 +312,18 @@ class WaypointServer:
 
     def load_waypoints_service(self, request):
         filename = request.file_name
+        response = LoadWaypointsResponse()
         error_message = self.load_waypoints_from_file(filename)
+
         if error_message == None:
+            response.success = True
+            response.message = "Loaded waypoints successfully"
             rospy.loginfo("Loaded waypoints from {0}".format(filename))
         else:
+            response.success = False
+            response.message = str(error_message)
             rospy.loginfo("Failed to load waypoints: {0}".format(error_message))
-        return LoadWaypointsResponse()
+        return response
 
     def save_waypoints_to_file(self, filename):
         data = {"waypoints": {}, "edges": []}
