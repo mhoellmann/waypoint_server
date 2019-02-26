@@ -20,22 +20,25 @@ from networkx import Graph
 import math
 import yaml
 
-# define menu entry item ids (starts from 1 [top menu item])
+# define menu entry item ids (top menu item must start from 1)
 MENU_CONNECT_EDGE = 1
-MENU_CONNECT_EDGE_DOOR = 2 
-MENU_DISCONNECT_EDGE = 3
-MENU_CLEAR = 4
-MENU_REMOVE = 5
+MENU_CONNECT_EDGE_DOOR = 2
+MENU_CONNECT_EDGE_ELEVATOR = 3
+MENU_DISCONNECT_EDGE = 4
+MENU_CLEAR = 5
+MENU_RENAME = 6
+MENU_REMOVE = 7
 
 # define program states
 STATE_REGULAR = 0
 STATE_CONNECT = 1
 STATE_DISCONNECT = 2
-STATE_NONE = 3 
+STATE_NONE = 3
 
 # define edge types
 EDGE_REGULAR = 0
 EDGE_DOOR = 1
+EDGE_ELEVATOR = 2
 
 def euclidean_distance(point1, point2):
     return math.sqrt((point2.x - point1.x)**2 + (point2.y - point1.y)**2 + (point2.z - point1.z)**2)
@@ -106,19 +109,25 @@ class WaypointServer:
         edge.header.frame_id = self.marker_frame
         edge.header.stamp = rospy.Time.now()
         edge.ns = "waypoint_edges"
-        edge.id = self.next_edge_id 
+        edge.id = self.next_edge_id
         self.next_edge_id += 1
         edge.type = Marker.LINE_LIST
         edge.action = Marker.ADD
         edge.scale.x = scale * 0.45
         edge.scale.y = scale * 0.45
         edge.scale.z = scale * 0.45
-        edge.color.r = 0
-        if edge_type == EDGE_DOOR:
-            edge.color.g = 1 
-        else:
-            edge.color.g = 0 
-        edge.color.b = 1
+        if edge_type == EDGE_REGULAR:
+            edge.color.r = 0
+            edge.color.g = 0
+            edge.color.b = 1
+        elif edge_type == EDGE_DOOR:
+            edge.color.r = 0
+            edge.color.g = 1
+            edge.color.b = 1
+        elif edge_type == EDGE_ELEVATOR:
+            edge.color.r = 0
+            edge.color.g = 1
+            edge.color.b = 0
         edge.color.a = 1.0
         edge.points.append(begin)
         edge.points.append(end)
@@ -154,7 +163,7 @@ class WaypointServer:
             edges.markers.append(marker)
             self.waypoint_graph.remove_edge(u, v)
             self.edge_line_publisher.publish(edges)  # publish deletion
-    
+
     def _connect_markers(self, u, v, cost=0.0, edge_type=EDGE_REGULAR):
             name_u = self.uuid_name_map[u]
             name_v = self.uuid_name_map[v]
@@ -184,11 +193,17 @@ class WaypointServer:
                 self.state = STATE_CONNECT
                 self.edge_type = EDGE_DOOR
                 self.connect_from_marker = feedback.marker_name
+            elif handle == MENU_CONNECT_EDGE_ELEVATOR:
+                self.state = STATE_CONNECT
+                self.edge_type = EDGE_ELEVATOR
+                self.connect_from_marker = feedback.marker_name
             elif handle == MENU_DISCONNECT_EDGE:
                 self.state = STATE_DISCONNECT
                 self.connect_from_marker = feedback.marker_name
             elif handle == MENU_CLEAR:
                 self._clear_marker_edges(feedback.marker_name)
+            elif handle == MENU_RENAME:
+                self._remove_marker(feedback.marker_name)
             elif handle == MENU_REMOVE:
                 self._remove_marker(feedback.marker_name)
 
@@ -265,10 +280,12 @@ class WaypointServer:
 
         # interactive menu for each marker
         menu_handler = MenuHandler()
-	menu_handler.insert("Connect normal edge...", callback=self.process_feedback)
+        menu_handler.insert("Connect normal edge...", callback=self.process_feedback)
         menu_handler.insert("Connect door edge...", callback=self.process_feedback)
+        menu_handler.insert("Connect elevator edge...", callback=self.process_feedback)
         menu_handler.insert("Disconnect edge...", callback=self.process_feedback)
         menu_handler.insert("Clear connected edges", callback=self.process_feedback)
+        menu_handler.insert("Rename marker", callback=self.process_feedback)
         menu_handler.insert("Remove marker", callback=self.process_feedback)
 
         # make a box which also moves in the plane
@@ -292,11 +309,14 @@ class WaypointServer:
         self.save_waypoints_to_file(filename)
         rospy.loginfo("Saved waypoints to {0}".format(filename))
         return SaveWaypointsResponse()
-    
+
     def load_waypoints_service(self, request):
         filename = request.file_name
-        self.load_waypoints_from_file(filename)
-        rospy.loginfo("Loaded waypoints from {0}".format(filename))
+        error_message = self.load_waypoints_from_file(filename)
+        if error_message == None:
+            rospy.loginfo("Loaded waypoints from {0}".format(filename))
+        else:
+            rospy.loginfo("Failed to load waypoints: {0}".format(error_message))
         return LoadWaypointsResponse()
 
     def save_waypoints_to_file(self, filename):
@@ -314,17 +334,22 @@ class WaypointServer:
             yaml.dump(data, f, default_flow_style=False)
 
     def load_waypoints_from_file(self, filename):
-        self.clear_all_markers()
-        self.server.clear()
-        with open(filename, 'r') as f:
-            data = yaml.load(f)
+        error_message = None  # assume file location and contents are correct
+        try:
+            with open(filename, 'r') as f:
+                data = yaml.load(f)
 
-        for uuid, wp in data["waypoints"].items():
-            point = Point(wp["x"], wp["y"], wp["z"])
-            self.insert_marker(position=point, uuid=uuid, name=wp['name'])
+            self.clear_all_markers()
+            self.server.clear()
 
-        for edge in data["edges"]:
-            self._connect_markers(edge['u'], edge['v'], edge['cost'], edge['edge_type'])
+            for uuid, wp in data["waypoints"].items():
+                point = Point(wp["x"], wp["y"], wp["z"])
+                self.insert_marker(position=point, uuid=uuid, name=wp['name'])
+            for edge in data["edges"]:
+                self._connect_markers(edge['u'], edge['v'], edge['cost'], edge['edge_type'])
+        except Exception as e:
+            error_message = e
+        return error_message
 
     def remove_edge_service_call(self, request):
         if self.waypoint_graph.has_edge(request.u, request.v):
