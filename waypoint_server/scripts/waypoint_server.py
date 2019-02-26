@@ -164,17 +164,18 @@ class WaypointServer:
             self.waypoint_graph.remove_edge(u, v)
             self.edge_line_publisher.publish(edges)  # publish deletion
 
-    def _connect_markers(self, u, v, cost=0.0, edge_type=EDGE_REGULAR):
+    def _connect_markers(self, u, v, cost=1.0, edge_type=EDGE_REGULAR):
             name_u = self.uuid_name_map[u]
             name_v = self.uuid_name_map[v]
             if name_u == name_v:
-                rospy.loginfo("Cannot connect a marker to itself")
+                rospy.logwarn("Cannot connect a marker to itself")
                 return
             u_pos = self.server.get(u).pose.position
             v_pos = self.server.get(v).pose.position
+            cost = euclidean_distance(u_pos,v_pos)
             # insert edge
             edge = self._make_edge(0.2, u_pos, v_pos, edge_type)
-            edge.text = str(cost) if cost is not 0 else ""
+            edge.text = str(cost)
             # insert edge into graph
             self.waypoint_graph.add_edge(u, v, u=u, v=v, cost=cost, edge_type=edge_type, marker=edge)
             self.update_edges()
@@ -245,7 +246,9 @@ class WaypointServer:
                 data["marker"].points[0] = pose.position
             else:
                 data["marker"].points[1] = pose.position
-
+            u_pos = self.server.get(u).pose.position
+            v_pos = self.server.get(v).pose.position
+            data["cost"] = euclidean_distance(u_pos,v_pos)
         self.update_edges()
         self.server.applyChanges()
 
