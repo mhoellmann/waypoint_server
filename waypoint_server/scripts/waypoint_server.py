@@ -433,13 +433,31 @@ class WaypointServer:
             response.waypoints = nx.shortest_path(self.waypoint_graph, request.u, target, weight='cost')
         else:
             response.waypoints = nx.shortest_path(self.waypoint_graph, request.v, target, weight='cost')
+
+        self.show_active_path(response.waypoints)
         response.success = True
 
         return response
+
+    def show_active_path(self, waypoints):
+        edges = MarkerArray()
+        i = 0
+        while i < (len(waypoints)-1):
+            u = waypoints[i]
+            v = waypoints[i+1]
+            if self.waypoint_graph.has_edge(u, v):
+                marker = self.waypoint_graph.get_edge_data(u, v)["marker"]
+                marker.color.r = min(1, marker.color.r+0.3)
+                marker.color.g = min(1, marker.color.g+0.3)
+                marker.color.b = min(1, marker.color.b+0.3)
+                marker.scale.x = 0.33
+                edges.markers.append(marker)
+            i += 1
+        self.edge_line_publisher.publish(edges)  # publish deletion
 
 if __name__ == "__main__":
     rospy.init_node("waypoint_server")
     rospy.loginfo("(Waypoint_Server) initializing...")
     server = WaypointServer()
-    rospy.loginfo("(Waypoint_Server) ready.")
+    rospy.loginfo("[Waypoint_Server] ready.")
     rospy.spin()
