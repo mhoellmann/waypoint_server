@@ -10,13 +10,14 @@ from waypoint_msgs.srv import RemoveEdge, RemoveEdgeResponse
 from waypoint_msgs.srv import SaveWaypoints, SaveWaypointsResponse
 from waypoint_msgs.srv import LoadWaypoints, LoadWaypointsResponse
 from waypoint_msgs.srv import GetWaypointGraph, GetWaypointGraphResponse
+from waypoint_msgs.srv import GetShortestPath, GetShortestPathResponse
 
 from uuid_msgs.msg import UniqueID
 import unique_id
 
 from visualization_msgs.msg import *
 from geometry_msgs.msg import PointStamped, PoseStamped, Point
-from networkx import Graph
+import networkx as nx
 import math
 import yaml
 
@@ -47,7 +48,7 @@ def euclidean_distance(point1, point2):
 class WaypointServer:
     def __init__(self):
         self.server = InteractiveMarkerServer("waypoint_server")
-        self.waypoint_graph = Graph()
+        self.waypoint_graph = nx.Graph()
         self.next_waypoint_id = 0
         self.next_edge_id = 0
         self.state = STATE_REGULAR
@@ -60,6 +61,7 @@ class WaypointServer:
         self.removeService = rospy.Service('~remove_edge', RemoveEdge, self.remove_edge_service_call)
         self.loadService = rospy.Service('~load_waypoints', LoadWaypoints, self.load_waypoints_service)
         self.saveService = rospy.Service('~save_waypoints', SaveWaypoints, self.save_waypoints_service)
+        self.getShortestPathService = rospy.Service('~get_shortest_path', GetShortestPath, self.get_shortest_path_service)
         self.getWaypointGraphService = rospy.Service('~get_waypoint_graph', GetWaypointGraph, self.get_waypoint_graph_service_call)
 
         rospy.Subscriber("/clicked_point", PointStamped, self.insert_marker_callback)
@@ -260,7 +262,7 @@ class WaypointServer:
             uuid = unique_id.fromRandom()
 
         if name is None:
-            name = "wp{0}".format(self.next_waypoint_id)
+            name = "wp{:03}".format(self.next_waypoint_id)
             self.next_waypoint_id += 1
 
         self.uuid_name_map[str(uuid)] = name
@@ -407,6 +409,33 @@ class WaypointServer:
 
         return ret
 
+    def get_shortest_path_service(self, request):
+        response = GetShortestPathResponse()
+        # ensure waypoints robot is in between exist in graph
+        if not request.u in self.uuid_name_map or not request.v in self.uuid_name_map:
+            response.success = False
+            respose.message = "The u or v does not match a waypoint"
+            rospy.logwarn("get_shortest_path_service: The u or v does not match a waypoint")
+            return response
+
+        # ensure target in request exists in graph
+        matching_waypoints = [k for k, v in self.uuid_name_map.items() if request.target in v]
+        if not matching_waypoints:
+            response.success = False
+            response.message = "The target does not match a waypoint"
+            rospy.logwarn("get_shortest_path_service: The target does not match a waypoint")
+            return response
+        target = matching_waypoints[0]
+        # compute shortest path between each initial waypoint and target
+        u_path = nx.shortest_path_length(self.waypoint_graph, request.u, target, weight='cost')
+        v_path = nx.shortest_path_length(self.waypoint_graph, request.v, target, weight='cost')
+        if u_path < v_path:
+            response.waypoints = nx.shortest_path(self.waypoint_graph, request.u, target, weight='cost')
+        else:
+            response.waypoints = nx.shortest_path(self.waypoint_graph, request.v, target, weight='cost')
+        response.success = True
+
+        return response
 
 if __name__ == "__main__":
     rospy.init_node("waypoint_server")

@@ -1,12 +1,16 @@
 <?xml version="1.0"?>
 <package format="2">
   <name>waypoint_msgs</name>
-  <version>0.1.0</version>
+  <version>0.1.1</version>
   <description>Messages for the waypoint server</description>
   <maintainer email="spuetz@uos.de">Sebastian Pütz</maintainer>
   <maintainer email="felix.igelbrink@uos.de">Felix Igelbrink</maintainer>
+  <maintainer email="imar759@aucklanduni.ac.nz">Igor Markovic</maintainer>
+  <maintainer email="dsmi923@aucklanduni.ac.nz">David Smith</maintainer>
   <author email="spuetz@uos.de">Sebastian Pütz</author>
   <author email="felix.igelbrink@uos.de">Felix Igelbrink</author>
+  <author email="imar759@aucklanduni.ac.nz">Igor Markovic</author>
+  <author email="dsmi923@aucklanduni.ac.nz">David Smith</author>
 
   <license>BSD</license>
 

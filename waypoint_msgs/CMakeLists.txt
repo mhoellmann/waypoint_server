@@ -20,6 +20,7 @@ add_service_files(FILES
   SaveWaypoints.srv
   LoadWaypoints.srv
   GetWaypointGraph.srv
+  GetShortestPath.srv
 )
 
 generate_messages(DEPENDENCIES
