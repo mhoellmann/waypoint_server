@@ -1,3 +1,3 @@
-uuid_msgs/UniqueID uuid
+string uuid
 string name
-geometry_msgs/PointStamped positions
+geometry_msgs/Point positions

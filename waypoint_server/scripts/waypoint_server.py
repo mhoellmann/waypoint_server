@@ -360,7 +360,7 @@ class WaypointServer:
                 self.filename = filename
             else:
                 with open(self.filename) as f:
-                    data = yaml.load(f) 
+                    data = yaml.load(f)
             for uuid in self.waypoint_graph.nodes():
                 name = self.uuid_name_map[uuid]
                 pos = self.server.get(uuid).pose.position
@@ -447,11 +447,22 @@ class WaypointServer:
         u_path = nx.shortest_path_length(self.waypoint_graph, request.u, target, weight='cost')
         v_path = nx.shortest_path_length(self.waypoint_graph, request.v, target, weight='cost')
         if u_path < v_path:
-            response.waypoints = nx.shortest_path(self.waypoint_graph, request.u, target, weight='cost')
+            waypoints = nx.shortest_path(self.waypoint_graph, request.u, target, weight='cost')
         else:
-            response.waypoints = nx.shortest_path(self.waypoint_graph, request.v, target, weight='cost')
+            waypoints = nx.shortest_path(self.waypoint_graph, request.v, target, weight='cost')
 
-        self.show_active_path(response.waypoints)
+        response.waypoints = []
+        for waypoint in waypoints:
+            wn = WaypointNode()
+            rospy.loginfo(waypoint)
+            rospy.loginfo(wn)
+            wn.uuid = waypoint
+            wn.name = self.uuid_name_map[waypoint]
+            rospy.loginfo(self.server.get(waypoint).pose.position)
+            wn.positions = self.server.get(waypoint).pose.position
+            response.waypoints.append(wn)
+
+        self.show_active_path(waypoints)
         response.success = True
 
         return response
