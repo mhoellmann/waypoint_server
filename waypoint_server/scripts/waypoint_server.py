@@ -11,9 +11,11 @@ from waypoint_msgs.srv import SaveWaypoints, SaveWaypointsResponse
 from waypoint_msgs.srv import LoadWaypoints, LoadWaypointsResponse
 from waypoint_msgs.srv import GetWaypointGraph, GetWaypointGraphResponse
 from waypoint_msgs.srv import GetShortestPath, GetShortestPathResponse
+from waypoint_msgs.srv import SetFloorLevel, SetFloorLevelResponse
 
 from uuid_msgs.msg import UniqueID
 import unique_id
+
 
 from visualization_msgs.msg import *
 from geometry_msgs.msg import PointStamped, PoseStamped, Point
@@ -41,6 +43,7 @@ EDGE_REGULAR = 0
 EDGE_DOOR = 1
 EDGE_ELEVATOR = 2
 
+
 def euclidean_distance(point1, point2):
     return math.sqrt((point2.x - point1.x)**2 + (point2.y - point1.y)**2 + (point2.z - point1.z)**2)
 
@@ -51,18 +54,21 @@ class WaypointServer:
         self.waypoint_graph = nx.Graph()
         self.next_waypoint_id = 0
         self.next_edge_id = 0
+        self.floor_level = 0
         self.state = STATE_REGULAR
         self.connect_from_marker = ""
         self.edge_type = EDGE_REGULAR
         self.edge_line_publisher = rospy.Publisher("~edges", MarkerArray, queue_size=10)
         self.marker_frame = rospy.get_param("~marker_frame", "map")
         self.uuid_name_map = {}
+        self.filename = ""
 
         self.removeService = rospy.Service('~remove_edge', RemoveEdge, self.remove_edge_service_call)
         self.loadService = rospy.Service('~load_waypoints', LoadWaypoints, self.load_waypoints_service)
         self.saveService = rospy.Service('~save_waypoints', SaveWaypoints, self.save_waypoints_service)
         self.getShortestPathService = rospy.Service('~get_shortest_path', GetShortestPath, self.get_shortest_path_service)
         self.getWaypointGraphService = rospy.Service('~get_waypoint_graph', GetWaypointGraph, self.get_waypoint_graph_service_call)
+        self.setFloorLevelService = rospy.Service('~set_floor_level', SetFloorLevel, self.set_floor_level)
 
         rospy.Subscriber("/clicked_point", PointStamped, self.insert_marker_callback)
         rospy.on_shutdown(self.clear_all_markers)
@@ -179,7 +185,7 @@ class WaypointServer:
             edge = self._make_edge(0.2, u_pos, v_pos, edge_type)
             edge.text = str(cost)
             # insert edge into graph
-            self.waypoint_graph.add_edge(u, v, u=u, v=v, cost=cost, edge_type=edge_type, marker=edge)
+            self.waypoint_graph.add_edge(u, v, u=u, v=v, cost=cost, edge_type=edge_type, marker=edge, floor_level=self.floor_level)
             self.update_edges()
 
     def update_edges(self):
@@ -313,7 +319,11 @@ class WaypointServer:
         self.waypoint_graph.add_node(str(uuid))
 
     def save_waypoints_service(self, request):
-        filename = request.file_name
+        if request.file_name:
+            filename = request.file_name
+        else:
+            filename = self.filename
+
         response = SaveWaypointsResponse()
         error_message = self.save_waypoints_to_file(filename)
 
@@ -328,14 +338,14 @@ class WaypointServer:
         return response
 
     def load_waypoints_service(self, request):
-        filename = request.file_name
+        self.filename = request.file_name
         response = LoadWaypointsResponse()
-        error_message = self.load_waypoints_from_file(filename)
+        error_message = self.load_waypoints_from_file(self.filename)
 
         if error_message == None:
             response.success = True
-            response.message = "Loaded waypoints from " + filename
-            rospy.loginfo("Loaded waypoints from {0}".format(filename))
+            response.message = "Loaded waypoints from " + str(self.filename)
+            rospy.loginfo("Loaded waypoints from {0}".format(self.filename))
         else:
             response.success = False
             response.message = str(error_message)
@@ -345,15 +355,20 @@ class WaypointServer:
     def save_waypoints_to_file(self, filename):
         error_message = None  # assume file location and contents are correct
         try:
-            data = {"waypoints": {}, "edges": []}
+            if not self.filename:
+                data = {"waypoints": {}, "edges": []}
+                self.filename = filename
+            else:
+                with open(self.filename) as f:
+                    data = yaml.load(f) 
             for uuid in self.waypoint_graph.nodes():
                 name = self.uuid_name_map[uuid]
                 pos = self.server.get(uuid).pose.position
-                data["waypoints"].update({uuid: {"name": name, "x": pos.x, "y": pos.y, "z": pos.z}})
+                data["waypoints"].update({uuid: {"name": name, "x": pos.x, "y": pos.y, "z": pos.z, "floor_level":self.floor_level}})
             for u, v, edge_data in self.waypoint_graph.edges(data=True):
                 cost = edge_data['cost']
                 edge_type = edge_data['edge_type']
-                data["edges"].append({'u': u, 'v': v, 'cost': cost, 'edge_type': edge_type})
+                data["edges"].append({'u': u, 'v': v, 'cost': cost, 'edge_type': edge_type, "floor_level":self.floor_level})
 
             with open(filename, 'w') as f:
                 yaml.dump(data, f, default_flow_style=False)
@@ -371,10 +386,12 @@ class WaypointServer:
             self.server.clear()
 
             for uuid, wp in data["waypoints"].items():
-                point = Point(wp["x"], wp["y"], wp["z"])
-                self.insert_marker(position=point, uuid=uuid, name=wp['name'])
+                if wp["floor_level"] == self.floor_level:
+                    point = Point(wp["x"], wp["y"], wp["z"])
+                    self.insert_marker(position=point, uuid=uuid, name=wp['name'])
             for edge in data["edges"]:
-                self._connect_markers(edge['u'], edge['v'], edge['cost'], edge['edge_type'])
+                if edge["floor_level"] == self.floor_level:
+                    self._connect_markers(edge['u'], edge['v'], edge['cost'], edge['edge_type'])
         except Exception as e:
             error_message = e
         return error_message
@@ -454,6 +471,28 @@ class WaypointServer:
                 edges.markers.append(marker)
             i += 1
         self.edge_line_publisher.publish(edges)  # publish deletion
+
+    def set_floor_level(self, request):
+        response = SetFloorLevelResponse()
+        filename = self.filename
+        prev_floor_level = self.floor_level
+
+        if self.filename:
+            self.floor_level = request.floor_level
+            error_message = self.load_waypoints_from_file(filename)
+            if error_message == None:
+                response.success = True
+                response.message = "Loaded waypoints from floor_level " + str(self.floor_level)
+                rospy.loginfo("Loaded waypoints from {0}".format(self.floor_level))
+            else:
+                response.success = False
+                self.floor_level = prev_floor_level
+                response.message = str(error_message)
+                rospy.loginfo("Failed to load waypoints from floor_level: {0}".format(self.floor_level))
+            return response
+        else:
+            response.success = True
+            return response
 
 if __name__ == "__main__":
     rospy.init_node("waypoint_server")

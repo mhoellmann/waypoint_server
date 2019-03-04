@@ -21,6 +21,7 @@ add_service_files(FILES
   LoadWaypoints.srv
   GetWaypointGraph.srv
   GetShortestPath.srv
+  SetFloorLevel.srv
 )
 
 generate_messages(DEPENDENCIES

@@ -1,0 +1,4 @@
+int16 floor_level
+---
+bool success # indicate successful run of triggered service
+string message # information e.g. for error messages
