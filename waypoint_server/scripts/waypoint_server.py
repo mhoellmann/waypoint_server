@@ -1,6 +1,6 @@
 #!/usr/bin/python2
 import rospy
-
+from std_msgs.msg import ColorRGBA
 from interactive_markers.interactive_marker_server import *
 from interactive_markers.menu_handler import *
 
@@ -43,6 +43,25 @@ EDGE_REGULAR = 0
 EDGE_DOOR = 1
 EDGE_ELEVATOR = 2
 
+# define edge type colors
+EDGE_REGULAR_COLOR = ColorRGBA()
+EDGE_REGULAR_COLOR.r = 0
+EDGE_REGULAR_COLOR.g = 0
+EDGE_REGULAR_COLOR.b = 1
+EDGE_REGULAR_COLOR.a = 1
+
+EDGE_DOOR_COLOR = ColorRGBA()
+EDGE_DOOR_COLOR.r = 0
+EDGE_DOOR_COLOR.g = 1
+EDGE_DOOR_COLOR.b = 1
+EDGE_DOOR_COLOR.a = 1
+
+EDGE_ELEVATOR_COLOR = ColorRGBA()
+EDGE_ELEVATOR_COLOR.r = 0
+EDGE_ELEVATOR_COLOR.g = 1
+EDGE_ELEVATOR_COLOR.b = 0
+EDGE_ELEVATOR_COLOR.a = 1
+
 # define waypoint types
 WAYPOINT_REGULAR = 0
 WAYPOINT_TERMINATING = 1
@@ -59,6 +78,7 @@ class WaypointServer:
         self.next_edge_id = 0
         self.floor_level = 0
         self.state = STATE_REGULAR
+        self.active_waypoints = None
         self.connect_from_marker = ""
         self.edge_type = EDGE_REGULAR
         self.waypoint_type = WAYPOINT_REGULAR
@@ -87,14 +107,14 @@ class WaypointServer:
 
         if len(load_file) != 0:
             rospy.loginfo("Waypoint_Server is loading initial waypoint file {0}.".format(load_file))
-            server.load_waypoints_from_file(load_file)
+            self.load_waypoints_from_file(load_file)
 
     def insert_marker_callback(self, pos):
         rospy.logdebug("Inserting new waypoint at position ({0},{1},{2}).".format(pos.point.x, pos.point.y, pos.point.z))
         self.waypoint_type = WAYPOINT_REGULAR
         self.insert_marker(pos.point)
 
-    def insert_terminating_marker_callback(self, pos): 
+    def insert_terminating_marker_callback(self, pos):
         rospy.logdebug("Inserting new")
         self.waypoint_type = WAYPOINT_TERMINATING
         self.insert_marker(pos.pose.pose, waypoint_type=WAYPOINT_TERMINATING)
@@ -125,7 +145,7 @@ class WaypointServer:
             marker.color.a = 1.0
         elif self.waypoint_type == WAYPOINT_TERMINATING:
             marker.type = Marker.ARROW
-            marker.pose.orientation = Quaternion(1, 0, 0, 0) 
+            marker.pose.orientation = Quaternion(1, 0, 0, 0)
             marker.scale.x = msg.scale * 0.5
             marker.scale.y = msg.scale * 0.25
             marker.scale.z = msg.scale * 0.45
@@ -133,7 +153,7 @@ class WaypointServer:
             marker.color.g = 0
             marker.color.b = 0
             marker.color.a = 1.0
-        
+
         return marker
 
     def _make_edge(self, scale, begin, end, edge_type=EDGE_REGULAR):
@@ -148,22 +168,26 @@ class WaypointServer:
         edge.scale.x = scale * 0.45
         edge.scale.y = scale * 0.45
         edge.scale.z = scale * 0.45
-        if edge_type == EDGE_REGULAR:
-            edge.color.r = 0
-            edge.color.g = 0
-            edge.color.b = 1
-        elif edge_type == EDGE_DOOR:
-            edge.color.r = 0
-            edge.color.g = 1
-            edge.color.b = 1
-        elif edge_type == EDGE_ELEVATOR:
-            edge.color.r = 0
-            edge.color.g = 1
-            edge.color.b = 0
-        edge.color.a = 1.0
+        self._set_edge_color(edge, edge_type)
         edge.points.append(begin)
         edge.points.append(end)
         return edge
+
+    def _set_edge_color(self, edge, edge_type):
+        if edge_type == EDGE_REGULAR:
+            edge.color.r = EDGE_REGULAR_COLOR.r
+            edge.color.g = EDGE_REGULAR_COLOR.g
+            edge.color.b = EDGE_REGULAR_COLOR.b
+        elif edge_type == EDGE_DOOR:
+            edge.color.r = EDGE_DOOR_COLOR.r
+            edge.color.g = EDGE_DOOR_COLOR.g
+            edge.color.b = EDGE_DOOR_COLOR.b
+        elif edge_type == EDGE_ELEVATOR:
+            edge.color.r = EDGE_ELEVATOR_COLOR.r
+            edge.color.g = EDGE_ELEVATOR_COLOR.g
+            edge.color.b = EDGE_ELEVATOR_COLOR.b
+        edge.color.a = 1
+
 
     def _remove_marker(self, name):
         self._clear_marker_edges(name)
@@ -212,6 +236,15 @@ class WaypointServer:
             self.waypoint_graph.add_edge(u, v, u=u, v=v, cost=cost, edge_type=edge_type, marker=edge, floor_level=self.floor_level)
             self.update_edges()
 
+    def set_marker_highlight(self, highlight=True, marker=None):
+        if marker == None:
+            marker = self.active_marker
+        m = self.server.get(self.active_marker)
+        m.controls[0].markers[0].color.b = 1 if highlight==True else 0
+        self.server.insert(m)
+        self.server.applyChanges()
+        pass
+
     def update_edges(self):
         edges = MarkerArray()
         marker = Marker()
@@ -232,18 +265,26 @@ class WaypointServer:
             if handle == MENU_CONNECT_EDGE:
                 self.state = STATE_CONNECT
                 self.edge_type = EDGE_REGULAR
+                self.active_marker = feedback.marker_name
                 self.connect_from_marker = feedback.marker_name
+                self.set_marker_highlight(marker=feedback.marker_name)
             elif handle == MENU_CONNECT_EDGE_DOOR:
                 self.state = STATE_CONNECT
                 self.edge_type = EDGE_DOOR
+                self.active_marker = feedback.marker_name
                 self.connect_from_marker = feedback.marker_name
+                self.set_marker_highlight(marker=feedback.marker_name)
             elif handle == MENU_CONNECT_EDGE_ELEVATOR:
                 self.state = STATE_CONNECT
                 self.edge_type = EDGE_ELEVATOR
+                self.active_marker = feedback.marker_name
                 self.connect_from_marker = feedback.marker_name
+                self.set_marker_highlight(marker=feedback.marker_name)
             elif handle == MENU_DISCONNECT_EDGE:
                 self.state = STATE_DISCONNECT
+                self.active_marker = feedback.marker_name
                 self.connect_from_marker = feedback.marker_name
+                self.set_marker_highlight(marker=feedback.marker_name)
             elif handle == MENU_CLEAR:
                 self._clear_marker_edges(feedback.marker_name)
             elif handle == MENU_RENAME:
@@ -255,6 +296,7 @@ class WaypointServer:
             if self.state == STATE_CONNECT:
                 self.state = STATE_NONE
                 self._connect_markers(self.connect_from_marker, feedback.marker_name, edge_type=self.edge_type)
+                self.set_marker_highlight(highlight=False)
             elif self.state == STATE_DISCONNECT:
                 self.state = STATE_NONE
                 self._disconnect_markers(self.connect_from_marker, feedback.marker_name)
@@ -321,7 +363,7 @@ class WaypointServer:
             int_marker.pose.orientation.w = 1
         elif waypoint_type == WAYPOINT_TERMINATING:
             int_marker.pose.position = position.position
-            int_marker.pose.orientation = position.orientation 
+            int_marker.pose.orientation = position.orientation
         int_marker.scale = 0.5
         int_marker.name = str(uuid)
         int_marker.description = name
@@ -402,10 +444,10 @@ class WaypointServer:
         error_message = None  # assume file location and contents are correct
         try:
             data = {"waypoints": {}, "edges": []}
-            
-            if self.filename and not filename: 
+
+            if self.filename and not filename:
                 filename = self.filename
-            
+
             for uuid, waypoint_data in self.waypoint_graph.nodes(data=True):
                 name = self.uuid_name_map[uuid]
                 waypoint_type = waypoint_data['waypoint_type']
@@ -449,7 +491,7 @@ class WaypointServer:
                 elif wp_type == WAYPOINT_TERMINATING:
                     point = Pose()
                     point.position = Point(wp["x"], wp["y"], wp["z"])
-                    point.orientation = Quaternion(wp["orientation"]["x"], wp["orientation"]["y"], 
+                    point.orientation = Quaternion(wp["orientation"]["x"], wp["orientation"]["y"],
                         wp["orientation"]["z"], wp["orientation"]["w"])
                 self.insert_marker(position=point, uuid=uuid, name=wp['name'], waypoint_type=wp_type)
 
@@ -470,7 +512,7 @@ class WaypointServer:
             self.clear_all_markers(clear_graph=False)
             self.server.clear()
             self.server.applyChanges()
-    
+
             for uuid, waypoint_data in self.waypoint_graph.nodes(data=True):
                 name = self.uuid_name_map[uuid]
                 position = waypoint_data["position"]
@@ -521,25 +563,27 @@ class WaypointServer:
         # ensure waypoints robot is in between exist in graph
         if not request.u in self.uuid_name_map or not request.v in self.uuid_name_map:
             response.success = False
-            respose.message = "The u or v does not match a waypoint"
+            response.message = "The u or v does not match a waypoint"
             rospy.logwarn("get_shortest_path_service: The u or v does not match a waypoint")
             return response
 
         # ensure target in request exists in graph
-        matching_waypoints = [k for k, v in self.uuid_name_map.items() if request.target in v]
-        if not matching_waypoints:
+        matching_targets = [k for k, v in self.uuid_name_map.items() if request.target in v]
+        if not matching_targets:
             response.success = False
             response.message = "The target does not match a waypoint"
             rospy.logwarn("get_shortest_path_service: The target does not match a waypoint")
             return response
-        target = matching_waypoints[0]
         # compute shortest path between each initial waypoint and target
-        u_path = nx.shortest_path_length(self.waypoint_graph, request.u, target, weight='cost')
-        v_path = nx.shortest_path_length(self.waypoint_graph, request.v, target, weight='cost')
-        if u_path < v_path:
-            waypoints = nx.shortest_path(self.waypoint_graph, request.u, target, weight='cost')
-        else:
-            waypoints = nx.shortest_path(self.waypoint_graph, request.v, target, weight='cost')
+        shortest_path_length = 100000000000000000
+        for target in matching_targets:
+            u_path = nx.shortest_path_length(self.waypoint_graph, request.u, target, weight='cost')
+            v_path = nx.shortest_path_length(self.waypoint_graph, request.v, target, weight='cost')
+            shortest_path_length = min(shortest_path_length, u_path, v_path)
+            if shortest_path_length == u_path:
+                waypoints = nx.shortest_path(self.waypoint_graph, request.u, target, weight='cost')
+            elif shortest_path_length == v_path:
+                waypoints = nx.shortest_path(self.waypoint_graph, request.v, target, weight='cost')
 
         response.waypoints = []
         for waypoint in waypoints:
@@ -557,10 +601,14 @@ class WaypointServer:
 
         self.show_active_path(waypoints)
         response.success = True
+        rospy.loginfo("Waypoints:")
+        rospy.loginfo(waypoints)
 
         return response
 
     def show_active_path(self, waypoints):
+        self.clear_active_path()  # clear previous
+        self.active_waypoints = waypoints
         edges = MarkerArray()
         i = 0
         while i < (len(waypoints)-1):
@@ -568,13 +616,32 @@ class WaypointServer:
             v = waypoints[i+1]
             if self.waypoint_graph.has_edge(u, v):
                 marker = self.waypoint_graph.get_edge_data(u, v)["marker"]
-                marker.color.r = min(1, marker.color.r+0.3)
-                marker.color.g = min(1, marker.color.g+0.3)
-                marker.color.b = min(1, marker.color.b+0.3)
-                marker.scale.x = 0.33
+                marker.color.r = min(1, marker.color.r+0.4)
+                marker.color.g = min(1, marker.color.g+0.4)
+                marker.color.b = min(1, marker.color.b+0.4)
+                marker.scale.x = 0.2
                 edges.markers.append(marker)
             i += 1
-        self.edge_line_publisher.publish(edges)  # publish deletion
+        self.edge_line_publisher.publish(edges)
+
+    def clear_active_path(self):
+        if self.active_waypoints is None:
+            return
+        waypoints = self.active_waypoints
+        edges = MarkerArray()
+        i = 0
+        while i < (len(waypoints)-1):
+            u = waypoints[i]
+            v = waypoints[i+1]
+            if self.waypoint_graph.has_edge(u, v):
+                marker = self.waypoint_graph.get_edge_data(u, v)["marker"]
+                edge_type = self.waypoint_graph.get_edge_data(u, v)["edge_type"]
+                self._set_edge_color(marker, edge_type)
+                marker.scale.x = 0.09
+                edges.markers.append(marker)
+            i += 1
+        self.edge_line_publisher.publish(edges)
+
 
     def set_floor_level(self, request):
         response = SetFloorLevelResponse()
