@@ -4,7 +4,11 @@ from std_msgs.msg import ColorRGBA
 from interactive_markers.interactive_marker_server import *
 from interactive_markers.menu_handler import *
 
+from text_box_input import MainWindow
 from waypoint_msgs.msg import WaypointEdge, WaypointNode, WaypointGraph
+
+import sys
+from PyQt5 import QtCore, QtWidgets
 
 from waypoint_msgs.srv import RemoveEdge, RemoveEdgeResponse
 from waypoint_msgs.srv import SaveWaypoints, SaveWaypointsResponse
@@ -188,6 +192,24 @@ class WaypointServer:
             edge.color.b = EDGE_ELEVATOR_COLOR.b
         edge.color.a = 1
 
+    def _rename_marker(self, name):
+        old_name = self.uuid_name_map[name]
+        app = QtWidgets.QApplication.instance()
+        if app is None:
+            app = QtWidgets.QApplication(sys.argv)
+            rename_popup_window = MainWindow(old_name)
+            rename_popup_window.show()
+            app.exec_()
+            new_name = rename_popup_window.getNewName()
+            app.exit()
+            del(app)
+
+        InteractiveMarker = self.server.get(name)
+        InteractiveMarker.description = new_name
+        self.uuid_name_map.update({name: new_name})
+        self.server.insert(InteractiveMarker)
+        self.server.applyChanges()
+        rospy.loginfo("changed waypoint name from : " + old_name + " to : " + new_name)
 
     def _remove_marker(self, name):
         self._clear_marker_edges(name)
@@ -288,7 +310,7 @@ class WaypointServer:
             elif handle == MENU_CLEAR:
                 self._clear_marker_edges(feedback.marker_name)
             elif handle == MENU_RENAME:
-                self._remove_marker(feedback.marker_name)
+                self._rename_marker(feedback.marker_name)
             elif handle == MENU_REMOVE:
                 self._remove_marker(feedback.marker_name)
 
