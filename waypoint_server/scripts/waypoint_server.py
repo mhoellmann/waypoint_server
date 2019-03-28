@@ -4,7 +4,7 @@ from std_msgs.msg import ColorRGBA
 from interactive_markers.interactive_marker_server import *
 from interactive_markers.menu_handler import *
 
-from text_box_input import MainWindow
+from text_box_input import InputWindow
 from waypoint_msgs.msg import WaypointEdge, WaypointNode, WaypointGraph
 
 import sys
@@ -197,7 +197,7 @@ class WaypointServer:
         app = QtWidgets.QApplication.instance()
         if app is None:
             app = QtWidgets.QApplication(sys.argv)
-            rename_popup_window = MainWindow(old_name)
+            rename_popup_window = InputWindow(old_name)
             rename_popup_window.show()
             app.exec_()
             new_name = rename_popup_window.getNewName()
@@ -209,7 +209,8 @@ class WaypointServer:
         self.uuid_name_map.update({name: new_name})
         self.server.insert(InteractiveMarker)
         self.server.applyChanges()
-        rospy.loginfo("changed waypoint name from : " + old_name + " to : " + new_name)
+        if new_name != old_name:
+            rospy.loginfo("changed waypoint name from '{0}' to '{1}'".format(old_name, new_name))
 
     def _remove_marker(self, name):
         self._clear_marker_edges(name)
@@ -322,6 +323,7 @@ class WaypointServer:
             elif self.state == STATE_DISCONNECT:
                 self.state = STATE_NONE
                 self._disconnect_markers(self.connect_from_marker, feedback.marker_name)
+                self.set_marker_highlight(highlight=False)
             elif self.state == STATE_NONE:
                 pass    # ignore
             else:
@@ -408,7 +410,7 @@ class WaypointServer:
         menu_handler.insert("Connect elevator edge...", callback=self.process_feedback)
         menu_handler.insert("Disconnect edge...", callback=self.process_feedback)
         menu_handler.insert("Clear connected edges", callback=self.process_feedback)
-        menu_handler.insert("Rename marker", callback=self.process_feedback)
+        menu_handler.insert("Rename marker...", callback=self.process_feedback)
         menu_handler.insert("Remove marker", callback=self.process_feedback)
 
         # make a box which also moves in the plane
