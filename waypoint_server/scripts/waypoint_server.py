@@ -244,9 +244,7 @@ class WaypointServer:
             self.edge_line_publisher.publish(edges)  # publish deletion
 
     def _connect_markers(self, u, v, cost=1.0, edge_type=EDGE_REGULAR):
-            name_u = self.uuid_name_map[u]
-            name_v = self.uuid_name_map[v]
-            if name_u == name_v:
+            if u == v:
                 rospy.logwarn("Cannot connect a marker to itself")
                 return
             u_pos = self.server.get(u).pose.position
