@@ -1,0 +1,9 @@
+<library path="lib/librviz_waypoint_plugin">
+  <class name="rviz_waypoint_plugin/Waypoint"
+         type="rviz::WaypointTool"
+         base_class_type="rviz::Tool">
+    <description>
+      Tool for setting terminating waypoints.
+    </description>
+  </class>
+</library>
