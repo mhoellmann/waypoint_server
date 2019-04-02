@@ -22,7 +22,7 @@ import unique_id
 
 
 from visualization_msgs.msg import *
-from geometry_msgs.msg import PointStamped, PoseStamped, PoseWithCovarianceStamped, Point, Quaternion, Pose
+from geometry_msgs.msg import PointStamped, PoseStamped, PoseStamped, Point, Quaternion, Pose
 import networkx as nx
 import math
 import yaml
@@ -99,7 +99,7 @@ class WaypointServer:
         self.setFloorLevelService = rospy.Service('~set_floor_level', SetFloorLevel, self.set_floor_level)
 
         rospy.Subscriber("/clicked_point", PointStamped, self.insert_marker_callback)
-        rospy.Subscriber("/clicked_pose", PoseWithCovarianceStamped, self.insert_terminating_marker_callback)
+        rospy.Subscriber("/clicked_pose", PoseStamped, self.insert_terminating_marker_callback)
         rospy.on_shutdown(self.clear_all_markers)
         rospy.logwarn("The waypoint server is waiting for RViz to run and to be subscribed to {0}.".format(rospy.resolve_name("~edges")))
         while self.edge_line_publisher.get_num_connections() == 0:
@@ -121,7 +121,7 @@ class WaypointServer:
     def insert_terminating_marker_callback(self, pos):
         rospy.logdebug("Inserting new")
         self.waypoint_type = WAYPOINT_TERMINATING
-        self.insert_marker(pos.pose.pose, waypoint_type=WAYPOINT_TERMINATING)
+        self.insert_marker(pos.pose, waypoint_type=WAYPOINT_TERMINATING)
 
     def clear_all_markers(self, clear_graph=True):
         edges = MarkerArray()
