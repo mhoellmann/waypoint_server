@@ -7,3 +7,5 @@ string target # label of the target waypoint e.g. "903-314"
 bool success # indicate successful run of triggered service
 string message # information e.g. for error messages
 WaypointNode[] waypoints  # lidy of waypoints robot will travel to
+bool door_required
+bool elevator_required

@@ -607,6 +607,19 @@ class WaypointServer:
             elif shortest_path_length == v_path:
                 waypoints = nx.shortest_path(self.waypoint_graph, request.v, target, weight='cost')
 
+
+        response.elevator_required = False
+        response.door_required = False
+
+        i = 0
+        while i < (len(waypoints)-1):
+            edge_type = self.waypoint_graph.get_edge_data(waypoints[i], waypoints[i+1])['edge_type']
+            if edge_type == EDGE_ELEVATOR:
+                response.elevator_required = True
+            elif edge_type == EDGE_DOOR:
+                response.door_required = True
+            i +=1
+
         response.waypoints = []
         for waypoint in waypoints:
             wn = WaypointNode()
