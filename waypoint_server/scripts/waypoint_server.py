@@ -111,7 +111,9 @@ class WaypointServer:
 
         if len(load_file) != 0:
             rospy.loginfo("Waypoint_Server is loading initial waypoint file {0}.".format(load_file))
-            self.load_waypoints_from_file(load_file)
+            error_message = self.load_waypoints_from_file(load_file)
+            if error_message:
+                rospy.logerr(error_message)
 
     def insert_marker_callback(self, pos):
         rospy.logdebug("Inserting new waypoint at position ({0},{1},{2}).".format(pos.point.x, pos.point.y, pos.point.z))
