@@ -22,6 +22,7 @@ add_service_files(FILES
   GetWaypointGraph.srv
   GetShortestPath.srv
   SetFloorLevel.srv
+  LoadDoorData.srv
 )
 
 generate_messages(DEPENDENCIES

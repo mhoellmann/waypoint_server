@@ -7,6 +7,7 @@ from interactive_markers.menu_handler import *
 from text_box_input import InputWindow
 from waypoint_msgs.msg import WaypointEdge, WaypointNode, WaypointGraph
 
+import numpy
 import sys
 from PyQt5 import QtCore, QtWidgets
 
@@ -16,7 +17,7 @@ from waypoint_msgs.srv import LoadWaypoints, LoadWaypointsResponse
 from waypoint_msgs.srv import GetWaypointGraph, GetWaypointGraphResponse
 from waypoint_msgs.srv import GetShortestPath, GetShortestPathResponse
 from waypoint_msgs.srv import SetFloorLevel, SetFloorLevelResponse
-
+from waypoint_msgs.srv import LoadDoorData, LoadDoorDataResponse
 from uuid_msgs.msg import UniqueID
 import unique_id
 
@@ -70,9 +71,13 @@ EDGE_ELEVATOR_COLOR.a = 1
 WAYPOINT_REGULAR = 0
 WAYPOINT_TERMINATING = 1
 
+# define orientation of lines for intersection
+COLINEAR = 0
+CLOCKWISE = 1
+COUNTERCLOCKWISE = 2
+
 def euclidean_distance(point1, point2):
     return math.sqrt((point2.x - point1.x)**2 + (point2.y - point1.y)**2 + (point2.z - point1.z)**2)
-
 
 class WaypointServer:
     def __init__(self):
@@ -89,6 +94,7 @@ class WaypointServer:
         self.edge_line_publisher = rospy.Publisher("~edges", MarkerArray, queue_size=10)
         self.marker_frame = rospy.get_param("~marker_frame", "map")
         self.uuid_name_map = {}
+        self.door_data = {}
         self.filename = ""
 
         self.removeService = rospy.Service('~remove_edge', RemoveEdge, self.remove_edge_service_call)
@@ -97,7 +103,7 @@ class WaypointServer:
         self.getShortestPathService = rospy.Service('~get_shortest_path', GetShortestPath, self.get_shortest_path_service)
         self.getWaypointGraphService = rospy.Service('~get_waypoint_graph', GetWaypointGraph, self.get_waypoint_graph_service_call)
         self.setFloorLevelService = rospy.Service('~set_floor_level', SetFloorLevel, self.set_floor_level)
-
+        self.loadDoorDataService = rospy.Service('~load_door_data', LoadDoorData, self.load_door_data_service)
         rospy.Subscriber("/clicked_point", PointStamped, self.insert_marker_callback)
         rospy.Subscriber("/clicked_pose", PoseStamped, self.insert_terminating_marker_callback)
         rospy.on_shutdown(self.clear_all_markers)
@@ -108,12 +114,86 @@ class WaypointServer:
         self.clear_all_markers()
 
         load_file = rospy.get_param("~waypoint_file", "") # yaml file with waypoints to load
+        door_file = rospy.get_param("~door_file", "")
 
         if len(load_file) != 0:
             rospy.loginfo("Waypoint_Server is loading initial waypoint file {0}.".format(load_file))
             error_message = self.load_waypoints_from_file(load_file)
             if error_message:
                 rospy.logerr(error_message)
+        if len(door_file) != 0:
+            rospy.loginfo("Door descriptions loaded from file {0}".format(door_file))
+            error_message = self.load_door_data_from_file(door_file)
+            if error_message:
+                rospy.logerr(error_message)
+
+    def load_door_data_from_file(self, filename):
+        error_message = None
+        try:
+            with open(filename, 'r') as f:
+                data = yaml.load(f)
+
+            self.door_data = data
+
+        except Exception as e:
+            self.door_data = {}
+            error_message = e
+        return error_message
+
+    def load_door_data_service(self, req):
+        response = LoadDoorDataResponse()
+        response.message = None
+        error_message = self.load_door_data_from_file(req.file_name)
+
+        if error_message:
+            response.success = False
+            response.message = str(error_message)
+        else:
+            response.success = True
+            response.message = "loaded door points from {0}".format(req.file_name)
+        return response
+
+    def find_door_edge(self, u, v):
+        edge_door = None
+
+        dp1 = Point()
+        dp2 = Point()
+
+        for door, door_data in self.door_data.iteritems():
+            dp1.x = door_data['start']['x']
+            dp1.y = door_data['start']['y']
+
+            dp2.x = door_data['end']['x']
+            dp2.y = door_data['end']['y']
+
+            if self.find_if_intersection(u, v, dp1, dp2):
+                edge_door = door
+                break
+
+        return edge_door
+
+
+    def find_if_intersection(self, u, v, p1, p2):
+        o1 = self.line_orientation(u,v,p1)
+        o2 = self.line_orientation(u,v,p2)
+        o3 = self.line_orientation(p1,p2,u)
+        o4 = self.line_orientation(p1,p2,v)
+
+        if o1 != o2 and o3 != o4:
+            return True
+        else:
+            return False
+
+    def line_orientation(self, a, b, c):
+        Area = (b.y - a.y)*(c.x - b.x) - (b.x - a.x)*(c.y - b.y)
+
+        if (Area < 0):
+            return CLOCKWISE
+        elif (Area > 0):
+            return COUNTERCLOCKWISE
+        else:
+            return COLINEAR
+
 
     def insert_marker_callback(self, pos):
         rospy.logdebug("Inserting new waypoint at position ({0},{1},{2}).".format(pos.point.x, pos.point.y, pos.point.z))
@@ -611,16 +691,8 @@ class WaypointServer:
 
 
         response.elevator_required = False
-        response.door_required = False
+        response.door_service_required = False
 
-        i = 0
-        while i < (len(waypoints)-1):
-            edge_type = self.waypoint_graph.get_edge_data(waypoints[i], waypoints[i+1])['edge_type']
-            if edge_type == EDGE_ELEVATOR:
-                response.elevator_required = True
-            elif edge_type == EDGE_DOOR:
-                response.door_required = True
-            i +=1
 
         response.waypoints = []
         for waypoint in waypoints:
@@ -635,6 +707,25 @@ class WaypointServer:
             else:
                 wn.positions = self.waypoint_graph.nodes[waypoint]["position"]
             response.waypoints.append(wn)
+
+        i = 0
+        while i < (len(waypoints)-1):
+            edge_type = self.waypoint_graph.get_edge_data(waypoints[i], waypoints[i+1])['edge_type']
+            if edge_type == EDGE_ELEVATOR:
+                response.elevator_required = True
+            elif edge_type == EDGE_DOOR:
+                if self.door_data:
+                    point1 = self.waypoint_graph.nodes[waypoints[i]]["position"]
+                    if self.waypoint_graph.nodes[waypoints[i+1]]["waypoint_type"] == WAYPOINT_TERMINATING:
+                        point2 = self.waypoint_graph.nodes[waypoints[i+1]]["position"].position
+                    else:
+                        point2 = self.waypoint_graph.nodes[waypoints[i+1]]["position"]
+                    door_required = self.find_door_edge(point1, point2)
+                    if door_required not in response.doors_required:
+                        response.doors_required.append(door_required)
+                    response.waypoints[i].door_required = door_required
+                response.door_service_required =True
+            i +=1
 
         self.show_active_path(waypoints)
         response.success = True
