@@ -85,13 +85,13 @@ class ShortestPath:
         for i in range(8):  # loop through all neighbours
             neighbour_index = self.index_from_direction(node.index, i)
             neighbour = self.get_node_from_index(neighbour_index)
+            # set extra_depth bassed on direction
+            if (i == DIRECTION_UP or i == DIRECTION_RIGHT or
+                i == DIRECTION_DOWN or i == DIRECTION_LEFT):
+                extra_depth = 1
+            else:  # diagonal direction
+                extra_depth = SQRT_TWO
             if neighbour is None:  # neighbour not in list yet
-                if (i == DIRECTION_UP or i == DIRECTION_RIGHT or
-                        i == DIRECTION_DOWN or i == DIRECTION_LEFT):
-                    extra_depth = 1
-                else:  # diagonal direction
-                    extra_depth = SQRT_TWO
-
                 if self.check_valid(neighbour_index):
                     neighbour = Node(neighbour_index,
                                      parent_index=node.index,
@@ -102,6 +102,7 @@ class ShortestPath:
                     self.index_nodes_map[neighbour_index] = neighbour
                     if neighbour_index == self.index_goal:
                         return True  # goal found
+
             else:  # neighbour exists in list
                 if neighbour.visited:
                     continue  # already dealt with this neighbour, so skip to next loop
@@ -109,13 +110,13 @@ class ShortestPath:
                     neighbour.depth = node.depth + extra_depth
                     neighbour.parent_index = node.index
 
-            if neighbour is not None:
-                cells = GridCells()
-                cells.header.frame_id = "map"
-                cells.cell_height = 0.1
-                cells.cell_width = 0.1
-                cells.cells = self.cells
-                self.cells_pub.publish(cells)
+            #if neighbour is not None:
+            #    cells = GridCells()
+            #    cells.header.frame_id = "map"
+            #    cells.cell_height = 0.1
+            #    cells.cell_width = 0.1
+            #    cells.cells = self.cells
+            #    self.cells_pub.publish(cells)
 
         node.visited = True  # node 'visited' after checking all of its neighbours
         return False  # goal not found
@@ -143,8 +144,9 @@ class ShortestPath:
         self.index_nodes_map[start_node.index] = start_node
         cn_start_t = time.time()
         while not self.check_neighbours(self.frontier_nodes.pop()):
-            self.cells.pop()  # visualization purposes
-            rospy.loginfo("length of frontier nodes {0}".format(len(self.frontier_nodes)))
+            #self.cells.pop()  # visualization purposes
+            pass
+            #rospy.loginfo("length of frontier nodes {0}".format(len(self.frontier_nodes)))
         print "below - while not self.check_neighbours(self.frontier_nodes.pop()):"
         print time.time() - cn_start_t
 
@@ -181,7 +183,7 @@ class ShortestPath:
 
 class Node:
 
-    def __init__(self, index, parent_index=0, visited=False, depth=0):
+    def __init__(self, index, parent_index=None, visited=False, depth=0):
         self.index = index
         self.parent_index = parent_index
         self.visited = visited
