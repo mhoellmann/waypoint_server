@@ -6,9 +6,15 @@ from nav_msgs.msg import OccupancyGrid, Path, GridCells
 from geometry_msgs.msg import Point, PoseStamped
 
 DIRECTION_UP = 0
-DIRECTION_RIGHT = 1
-DIRECTION_DOWN = 2
-DIRECTION_LEFT = 3
+DIRECTION_UP_RIGHT = 1
+DIRECTION_RIGHT = 2
+DIRECTION_DOWN_RIGHT = 3
+DIRECTION_DOWN = 4
+DIRECTION_DOWN_LEFT = 5
+DIRECTION_LEFT = 6
+DIRECTION_UP_LEFT = 7
+
+SQRT_TWO = 1.414213562373095
 
 class ShortestPath:
 
@@ -20,25 +26,29 @@ class ShortestPath:
     index_goal = 0
 
     def __init__(self):
-        rospy.loginfo("ShortestPath Init . . .")
+        rospy.loginfo("Initialising shortest path")
         self.map_sub = rospy.Subscriber("/map", OccupancyGrid, self.map_cb)
         self.path_pub = rospy.Publisher("/ratchet_path", Path, queue_size=1)
         self.cells_pub = rospy.Publisher("/ratchet_cells", GridCells, queue_size=10000)
         self.cells = deque()
 
     def index_from_xy(self, x, y):
-        # TODO ACCOUNT FOR MAP ORIGIN
+        # TODO: ACCOUNT FOR MAP ORIGIN
+        # x = x + self.occ_grid.info.origin.x
+        # y = y + self.occ_grid.info.origin.y
         res = self.occ_grid.info.resolution
         width = self.occ_grid.info.width
         return int(round(y / res)) * width + int(round(x / res))
 
     def xy_from_index(self, index):
-        # TODO ACCOUNT FOR MAP ORIGIN
+        # TODO: ACCOUNT FOR MAP ORIGIN
         res = self.occ_grid.info.resolution
         width = self.occ_grid.info.width
         y_ = index / width
         y = y_ * res
         x = (index - y_ * width) * res
+        # x = x - self.occ_grid.info.origin.x
+        # y = y - self.occ_grid.info.origin.y
         return x, y
 
     def point_from_node(self, node):
@@ -50,36 +60,53 @@ class ShortestPath:
     def index_from_direction(self, index, direction):
         if direction == DIRECTION_UP:
             addition = self.occ_grid.info.width
+        elif direction == DIRECTION_UP_RIGHT:
+            addition = self.occ_grid.info.width + 1
         elif direction == DIRECTION_RIGHT:
             addition = 1
+        elif direction == DIRECTION_DOWN_RIGHT:
+            addition = -self.occ_grid.info.width + 1
         elif direction == DIRECTION_DOWN:
-            addition = -1
-        elif direction == DIRECTION_LEFT:
             addition = -self.occ_grid.info.width
+        elif direction == DIRECTION_DOWN_LEFT:
+            addition = -self.occ_grid.info.width - 1
+        elif direction == DIRECTION_LEFT:
+            addition = -1
+        elif direction == DIRECTION_UP_LEFT:
+            addition = self.occ_grid.info.width - 1
 
         return index + addition
 
     def check_neighbours(self, node):
-        for i in range(4):  # loop through up, right, down, left neighbours
+        """Check all neighbours of a node.
+        Add any new neighbours to list of nodes and frontier nodes.
+        Return true if neighbour's index is the target index.
+        """
+        for i in range(8):  # loop through all neighbours
             neighbour_index = self.index_from_direction(node.index, i)
             neighbour = self.get_node_from_index(neighbour_index)
-            if neighbour is None:  # neighbour not in list
+            if neighbour is None:  # neighbour not in list yet
+                if (i == DIRECTION_UP or i == DIRECTION_RIGHT or
+                        i == DIRECTION_DOWN or i == DIRECTION_LEFT):
+                    extra_depth = 1
+                else:  # diagonal direction
+                    extra_depth = SQRT_TWO
+
                 if self.check_valid(neighbour_index):
-                    neighbour = Node()
-                    neighbour.index = neighbour_index
-                    neighbour.parent_index = node.index
-                    neighbour.depth = node.depth + 1
+                    neighbour = Node(neighbour_index,
+                                     parent_index=node.index,
+                                     depth=node.depth+extra_depth)
                     self.frontier_nodes.appendleft(neighbour)
                     self.cells.appendleft(self.point_from_node(neighbour))
                     self.nodes.append(neighbour)
                     self.index_nodes_map[neighbour_index] = neighbour
                     if neighbour_index == self.index_goal:
                         return True  # goal found
-            else:  # neighbour exists
+            else:  # neighbour exists in list
                 if neighbour.visited:
-                    continue
-                if neighbour.depth > node.depth + 1:
-                    neighbour.depth = node.depth + 1
+                    continue  # already dealt with this neighbour, so skip to next loop
+                if neighbour.depth > node.depth + extra_depth:
+                    neighbour.depth = node.depth + extra_depth
                     neighbour.parent_index = node.index
 
             if neighbour is not None:
@@ -89,21 +116,15 @@ class ShortestPath:
                 cells.cell_width = 0.1
                 cells.cells = self.cells
                 self.cells_pub.publish(cells)
-                if node.parent_index == neighbour.index:
-                    rospy.logwarn("SEOMTHING AINT RIGHT")
-                    time.sleep(20)
 
-
-
-        node.visited = True
+        node.visited = True  # node 'visited' after checking all of its neighbours
         return False  # goal not found
 
     def check_valid(self, index):
         if index >= 0 and index <= len(self.occ_grid.data):  # if within map
-            if self.occ_grid.data[index] == 0:  # non-obstacle
+            if self.occ_grid.data[index] == 0:  # if non-obstacle
                 return True
-        else:
-            return False
+        return False
 
     def get_node_from_index(self, index):
         try:
@@ -116,15 +137,16 @@ class ShortestPath:
         self.index_start = self.index_from_xy(start.x, start.y)
         self.index_goal = self.index_from_xy(goal.x, goal.y)
 
-        start_node = Node()
-        start_node.index = self.index_start
+        start_node = Node(self.index_start)
         self.nodes.append(start_node)
         self.frontier_nodes.append(start_node)
         self.index_nodes_map[start_node.index] = start_node
+        cn_start_t = time.time()
         while not self.check_neighbours(self.frontier_nodes.pop()):
-            pass
-            self.cells.pop()
-            rospy.loginfo("len frontier nodes {0}".format(len(self.frontier_nodes)))
+            self.cells.pop()  # visualization purposes
+            rospy.loginfo("length of frontier nodes {0}".format(len(self.frontier_nodes)))
+        print "below - while not self.check_neighbours(self.frontier_nodes.pop()):"
+        print time.time() - cn_start_t
 
         shortest_path = []
         node = self.get_node_from_index(self.index_goal)
@@ -134,13 +156,14 @@ class ShortestPath:
 
         path = Path()
         path.header.frame_id = "map"
-        while len(shortest_path) > 0:
+        while shortest_path:  # items in shortest_path > 0
             node = shortest_path.pop()
             point = self.point_from_node(node)
             pose_stamped = PoseStamped()
             pose_stamped.pose.position = point
             path.poses.append(pose_stamped)
-        print(time.time() - start_t)
+        print "shortest_path function below"
+        print time.time() - start_t
         return path
 
 
@@ -157,13 +180,14 @@ class ShortestPath:
         rospy.loginfo("nodes traversed: {}".format(len(self.nodes)))
 
 class Node:
-    index = 0
-    parent_index = None
-    visited = False
-    depth = 0
+
+    def __init__(self, index, parent_index=0, visited=False, depth=0):
+        self.index = index
+        self.parent_index = parent_index
+        self.visited = visited
+        self.depth = depth
 
 if __name__ == '__main__':
     rospy.init_node('shortest_path_node', anonymous=False)
-    sp = ShortestPath()
+    SP = ShortestPath()
     rospy.spin()
-
