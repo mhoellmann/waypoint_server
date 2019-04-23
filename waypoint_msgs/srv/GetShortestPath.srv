@@ -1,6 +1,5 @@
 # need to add x and y position of robot to get moer accruavte things
-string u  # first waypoint robot is in between
-string v  # second waypoint robot is in between
+geometry_msgs/Point location # x and y position
 int8 floor_number  # e.g. 1, 2
 string target # label of the target waypoint e.g. "903-314"
 ---
