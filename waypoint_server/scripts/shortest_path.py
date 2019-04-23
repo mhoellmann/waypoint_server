@@ -1,6 +1,8 @@
 #!/usr/bin/python2
 import time #todo remove
+import math
 from collections import deque  # performance; faster than prepending regular list
+from heapq import heappush, heappop  # priority queue for faster algorithm
 import rospy
 from nav_msgs.msg import OccupancyGrid, Path, GridCells
 from geometry_msgs.msg import Point, PoseStamped
@@ -16,12 +18,16 @@ DIRECTION_UP_LEFT = 7
 
 SQRT_TWO = 1.414213562373095
 
+def euclidean_distance(x1, y1, x2, y2):
+    return math.sqrt((x2-x1)**2 + (y2-y1)**2)
+
 class ShortestPath:
 
     occ_grid = OccupancyGrid()  # store map data in row (x) first order
     nodes = []  # all nodes in search
     index_nodes_map = {}
     frontier_nodes = deque()
+    frontier_nodes_pl = []
     index_start = 0
     index_goal = 0
 
@@ -30,7 +36,7 @@ class ShortestPath:
         self.map_sub = rospy.Subscriber("/map", OccupancyGrid, self.map_cb)
         self.path_pub = rospy.Publisher("/ratchet_path", Path, queue_size=1)
         self.cells_pub = rospy.Publisher("/ratchet_cells", GridCells, queue_size=10000)
-        self.cells = deque()
+        self.cells = deque()  # visualization purposes
 
     def index_from_xy(self, x, y):
         # TODO: ACCOUNT FOR MAP ORIGIN
@@ -97,7 +103,11 @@ class ShortestPath:
                                      parent_index=node.index,
                                      depth=node.depth+extra_depth)
                     self.frontier_nodes.appendleft(neighbour)
-                    self.cells.appendleft(self.point_from_node(neighbour))
+                    dist = euclidean_distance(*(self.xy_from_index(neighbour_index)+
+                                              self.xy_from_index(self.index_goal)))
+                    item = (dist, neighbour)
+                    heappush(self.frontier_nodes_pl, item)
+                    #self.cells.appendleft(self.point_from_node(neighbour))
                     self.nodes.append(neighbour)
                     self.index_nodes_map[neighbour_index] = neighbour
                     if neighbour_index == self.index_goal:
@@ -143,7 +153,11 @@ class ShortestPath:
         self.frontier_nodes.append(start_node)
         self.index_nodes_map[start_node.index] = start_node
         cn_start_t = time.time()
-        while not self.check_neighbours(self.frontier_nodes.pop()):
+        dist = euclidean_distance(*(self.xy_from_index(self.index_start)+
+                                  self.xy_from_index(self.index_goal)))
+        item = (dist, start_node)
+        heappush(self.frontier_nodes_pl, item)
+        while not self.check_neighbours(heappop(self.frontier_nodes_pl)[1]):
             #self.cells.pop()  # visualization purposes
             pass
             #rospy.loginfo("length of frontier nodes {0}".format(len(self.frontier_nodes)))
@@ -152,22 +166,25 @@ class ShortestPath:
 
         shortest_path = []
         node = self.get_node_from_index(self.index_goal)
+        print "node.parnet index below"
+        print node.parent_index
         while node.parent_index is not None:
             shortest_path.append(node)
             node = self.get_node_from_index(node.parent_index)
-
+            
         path = Path()
         path.header.frame_id = "map"
         while shortest_path:  # items in shortest_path > 0
+            print "shortest path!!!!!!!!!!!!!!!!!"
             node = shortest_path.pop()
             point = self.point_from_node(node)
             pose_stamped = PoseStamped()
+            pose_stamped.header.frame_id = "map"
             pose_stamped.pose.position = point
             path.poses.append(pose_stamped)
-        print "shortest_path function below"
+        print "shortest_path function time below"
         print time.time() - start_t
         return path
-
 
     def map_cb(self, map_data):
         self.occ_grid = map_data
