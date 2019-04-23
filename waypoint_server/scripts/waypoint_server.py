@@ -1,4 +1,5 @@
 #!/usr/bin/python2
+import operator  # sorting dictionaries
 import rospy
 from std_msgs.msg import ColorRGBA
 from interactive_markers.interactive_marker_server import *
@@ -28,53 +29,9 @@ import networkx as nx
 import math
 import yaml
 
-# define menu entry item ids (top menu item must start from 1)
-MENU_CONNECT_EDGE = 1
-MENU_CONNECT_EDGE_DOOR = 2
-MENU_CONNECT_EDGE_ELEVATOR = 3
-MENU_DISCONNECT_EDGE = 4
-MENU_CLEAR = 5
-MENU_RENAME = 6
-MENU_REMOVE = 7
+from shortest_path import ShortestPath
 
-# define program states
-STATE_REGULAR = 0
-STATE_CONNECT = 1
-STATE_DISCONNECT = 2
-STATE_NONE = 3
-
-# define edge types
-EDGE_REGULAR = 0
-EDGE_DOOR = 1
-EDGE_ELEVATOR = 2
-
-# define edge type colors
-EDGE_REGULAR_COLOR = ColorRGBA()
-EDGE_REGULAR_COLOR.r = 0
-EDGE_REGULAR_COLOR.g = 0
-EDGE_REGULAR_COLOR.b = 1
-EDGE_REGULAR_COLOR.a = 1
-
-EDGE_DOOR_COLOR = ColorRGBA()
-EDGE_DOOR_COLOR.r = 0
-EDGE_DOOR_COLOR.g = 1
-EDGE_DOOR_COLOR.b = 1
-EDGE_DOOR_COLOR.a = 1
-
-EDGE_ELEVATOR_COLOR = ColorRGBA()
-EDGE_ELEVATOR_COLOR.r = 0
-EDGE_ELEVATOR_COLOR.g = 1
-EDGE_ELEVATOR_COLOR.b = 0
-EDGE_ELEVATOR_COLOR.a = 1
-
-# define waypoint types
-WAYPOINT_REGULAR = 0
-WAYPOINT_TERMINATING = 1
-
-# define orientation of lines for intersection
-COLINEAR = 0
-CLOCKWISE = 1
-COUNTERCLOCKWISE = 2
+from constants import *
 
 def euclidean_distance(point1, point2):
     return math.sqrt((point2.x - point1.x)**2 + (point2.y - point1.y)**2 + (point2.z - point1.z)**2)
@@ -96,6 +53,8 @@ class WaypointServer:
         self.uuid_name_map = {}
         self.door_data = {}
         self.filename = ""
+
+        self.path_manager = ShortestPath()  # for checking closest waypoints by path
 
         self.removeService = rospy.Service('~remove_edge', RemoveEdge, self.remove_edge_service_call)
         self.loadService = rospy.Service('~load_waypoints', LoadWaypoints, self.load_waypoints_service)
@@ -166,14 +125,13 @@ class WaypointServer:
             dp2.x = door_data['end']['x']
             dp2.y = door_data['end']['y']
 
-            if self.find_if_intersection(u, v, dp1, dp2):
+            if self.is_intersection(u, v, dp1, dp2):
                 edge_door = door
                 break
 
         return edge_door
 
-
-    def find_if_intersection(self, u, v, p1, p2):
+    def is_intersection(self, u, v, p1, p2):
         o1 = self.line_orientation(u,v,p1)
         o2 = self.line_orientation(u,v,p2)
         o3 = self.line_orientation(p1,p2,u)
@@ -194,14 +152,13 @@ class WaypointServer:
         else:
             return COLINEAR
 
-
     def insert_marker_callback(self, pos):
         rospy.logdebug("Inserting new waypoint at position ({0},{1},{2}).".format(pos.point.x, pos.point.y, pos.point.z))
         self.waypoint_type = WAYPOINT_REGULAR
         self.insert_marker(pos.point, floor_level=self.floor_level)
 
     def insert_terminating_marker_callback(self, pos):
-        rospy.logdebug("Inserting new")
+        rospy.logdebug("Inserting new terminating waypoint at position ({0},{1},{2}).".format(pos.point.x, pos.point.y, pos.point.z))
         self.waypoint_type = WAYPOINT_TERMINATING
         self.insert_marker(pos.pose, waypoint_type=WAYPOINT_TERMINATING, floor_level=self.floor_level)
 
@@ -679,10 +636,8 @@ class WaypointServer:
             elif shortest_path_length == v_path:
                 waypoints = nx.shortest_path(self.waypoint_graph, request.v, target, weight='cost')
 
-
         response.elevator_required = False
         response.door_service_required = False
-
 
         response.waypoints = []
         for waypoint in waypoints:
@@ -779,9 +734,53 @@ class WaypointServer:
             rospy.loginfo("Failed to load waypoints from floor_level: {0}".format(request.floor_level))
         return response
 
+    def get_closest_waypoints_euclidean(self, x, y, amt=5):
+        """Return 'amt' closest waypoints of a position, based on euclidean distance"""
+        waypoints_distance_map = {}
+        for waypoint in self.waypoint_graph.nodes:
+            wp = self.waypoint_graph.node[waypoint]
+            if wp["floor_level"] == self.floor_level and wp["waypoint_type"] == WAYPOINT_REGULAR:  # could remove waypoint type check
+                start = Point()
+                start.x = x
+                start.y = y
+                goal = Point()
+                goal.x = wp["position"].x
+                goal.y = wp["position"].y
+                dist = euclidean_distance(start, goal)
+                waypoints_distance_map[waypoint] = dist
+                print dist
+        closest_waypoints_tuple = sorted(waypoints_distance_map.items(), key=operator.itemgetter(1))
+        closest_waypoints = [x[0] for x in closest_waypoints_tuple[:amt]]
+        print closest_waypoints
+        return closest_waypoints
+
+    def get_closest_waypoint(self, x, y):
+        closest_euclidean = self.get_closest_waypoints_euclidean(x,y)
+        start = Point()
+        start.x = x
+        start.y = y
+        goal = Point()
+        shortest_length = 999999999
+        closest_waypoint = None
+        for waypoint in closest_euclidean:
+            print "for loop x {}".format(x)
+            print "for loop y {}".format(y)
+            wp = self.waypoint_graph.node[waypoint]
+            goal.x = wp["position"].x
+            goal.y = wp["position"].y
+            length = self.path_manager.efficient_path(start, goal)
+            if length < shortest_length:
+                shortest_length = length
+                closest_waypoint = waypoint
+            raw_input("Press Enter to continue...")
+        print self.uuid_name_map[closest_waypoint]
+        return closest_waypoint
+
 if __name__ == "__main__":
     rospy.init_node("waypoint_server")
     rospy.loginfo("(Waypoint_Server) initializing...")
     server = WaypointServer()
     rospy.loginfo("[Waypoint_Server] ready.")
+    rospy.sleep(5)
+    server.get_closest_waypoint(152, 24)
     rospy.spin()

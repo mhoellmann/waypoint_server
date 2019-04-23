@@ -143,7 +143,15 @@ class ShortestPath:
         except KeyError:
             return None
 
-    def shortest_path(self, start, goal):
+    def reset(self):
+        self.nodes = []  # all nodes in search
+        self.index_nodes_map = {}
+        self.frontier_nodes = deque()
+        self.frontier_nodes_pl = []
+
+
+    def efficient_path(self, start, goal):
+        self.reset()
         start_t = time.time()
         self.index_start = self.index_from_xy(start.x, start.y)
         self.index_goal = self.index_from_xy(goal.x, goal.y)
@@ -164,39 +172,36 @@ class ShortestPath:
         print "below - while not self.check_neighbours(self.frontier_nodes.pop()):"
         print time.time() - cn_start_t
 
-        shortest_path = []
         node = self.get_node_from_index(self.index_goal)
-        print "node.parnet index below"
-        print node.parent_index
+        path_length = node.depth * self.occ_grid.info.resolution
+        print "shortest_path function time below"
+        print time.time() - start_t
+        self.generate_path(node)
+        return path_length
+
+    def generate_path(self, node):
+        """Generate path from the target node once goal is reached"""
+        shortest_path = []
         while node.parent_index is not None:
             shortest_path.append(node)
             node = self.get_node_from_index(node.parent_index)
-            
+
         path = Path()
         path.header.frame_id = "map"
         while shortest_path:  # items in shortest_path > 0
-            print "shortest path!!!!!!!!!!!!!!!!!"
             node = shortest_path.pop()
             point = self.point_from_node(node)
             pose_stamped = PoseStamped()
             pose_stamped.header.frame_id = "map"
             pose_stamped.pose.position = point
             path.poses.append(pose_stamped)
-        print "shortest_path function time below"
-        print time.time() - start_t
+        self.path_pub.publish(path)
         return path
+
 
     def map_cb(self, map_data):
         self.occ_grid = map_data
         rospy.loginfo("Acquired map.")
-        start = Point()
-        start.x = 143.112
-        start.y = 17.639
-        goal = Point()
-        goal.x = 148.4
-        goal.y = 23.51
-        self.path_pub.publish(self.shortest_path(start, goal))
-        rospy.loginfo("nodes traversed: {}".format(len(self.nodes)))
 
 class Node:
 
