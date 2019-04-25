@@ -158,7 +158,7 @@ class WaypointServer:
         self.insert_marker(pos.point, floor_level=self.floor_level)
 
     def insert_terminating_marker_callback(self, pos):
-        rospy.logdebug("Inserting new terminating waypoint at position ({0},{1},{2}).".format(pos.point.x, pos.point.y, pos.point.z))
+        rospy.logdebug("Inserting new terminating waypoint at position ({0},{1},{2}).".format(pos.pose.position.x, pos.pose.position.y, pos.pose.position.z))
         self.waypoint_type = WAYPOINT_TERMINATING
         self.insert_marker(pos.pose, waypoint_type=WAYPOINT_TERMINATING, floor_level=self.floor_level)
 
@@ -611,13 +611,6 @@ class WaypointServer:
 
     def get_shortest_path_service(self, request):
         response = GetShortestPathResponse()
-        # ensure waypoints robot is in between exist in graph
-        if not request.u in self.uuid_name_map or not request.v in self.uuid_name_map:
-            response.success = False
-            response.message = "The u or v does not match a waypoint"
-            rospy.logwarn("get_shortest_path_service: The u or v does not match a waypoint")
-            return response
-
         # ensure target in request exists in graph
         matching_targets = [k for k, v in self.uuid_name_map.items() if request.target in v]
         if not matching_targets:
@@ -625,16 +618,21 @@ class WaypointServer:
             response.message = "The target does not match a waypoint"
             rospy.logwarn("get_shortest_path_service: The target does not match a waypoint")
             return response
-        # compute shortest path between each initial waypoint and target
+
+        dicitonary = self.get_waypoints_within_distance(request.location.x, request.location.y)
+
         shortest_path_length = 100000000000000000
+        starting_waypoint = None
+        closest_target = None
         for target in matching_targets:
-            u_path = nx.shortest_path_length(self.waypoint_graph, request.u, target, weight='cost')
-            v_path = nx.shortest_path_length(self.waypoint_graph, request.v, target, weight='cost')
-            shortest_path_length = min(shortest_path_length, u_path, v_path)
-            if shortest_path_length == u_path:
-                waypoints = nx.shortest_path(self.waypoint_graph, request.u, target, weight='cost')
-            elif shortest_path_length == v_path:
-                waypoints = nx.shortest_path(self.waypoint_graph, request.v, target, weight='cost')
+            for initial_waypoint, dist_to_it in dicitonary.items():
+                path = nx.shortest_path_length(self.waypoint_graph, initial_waypoint, target, weight='cost') + dist_to_it
+                if path < shortest_path_length:
+                    shortest_path_length = path
+                    starting_waypoint = initial_waypoint
+                    closest_target = target
+
+        waypoints = nx.shortest_path(self.waypoint_graph, starting_waypoint, closest_target, weight='cost')
 
         response.elevator_required = False
         response.door_service_required = False
@@ -734,8 +732,8 @@ class WaypointServer:
             rospy.loginfo("Failed to load waypoints from floor_level: {0}".format(request.floor_level))
         return response
 
-    def get_closest_waypoints_euclidean(self, x, y, amt=5):
-        """Return 'amt' closest waypoints of a position, based on euclidean distance"""
+    def get_waypoints_within_distance(self, x, y, dist_limit=5):
+        """Return all waypoints within 'dist' metres of x and y point"""
         waypoints_distance_map = {}
         for waypoint in self.waypoint_graph.nodes:
             wp = self.waypoint_graph.node[waypoint]
@@ -747,40 +745,15 @@ class WaypointServer:
                 goal.x = wp["position"].x
                 goal.y = wp["position"].y
                 dist = euclidean_distance(start, goal)
-                waypoints_distance_map[waypoint] = dist
-                print dist
-        closest_waypoints_tuple = sorted(waypoints_distance_map.items(), key=operator.itemgetter(1))
-        closest_waypoints = [x[0] for x in closest_waypoints_tuple[:amt]]
-        print closest_waypoints
-        return closest_waypoints
-
-    def get_closest_waypoint(self, x, y):
-        closest_euclidean = self.get_closest_waypoints_euclidean(x,y)
-        start = Point()
-        start.x = x
-        start.y = y
-        goal = Point()
-        shortest_length = 999999999
-        closest_waypoint = None
-        for waypoint in closest_euclidean:
-            print "for loop x {}".format(x)
-            print "for loop y {}".format(y)
-            wp = self.waypoint_graph.node[waypoint]
-            goal.x = wp["position"].x
-            goal.y = wp["position"].y
-            length = self.path_manager.efficient_path(start, goal)
-            if length < shortest_length:
-                shortest_length = length
-                closest_waypoint = waypoint
-            raw_input("Press Enter to continue...")
-        print self.uuid_name_map[closest_waypoint]
-        return closest_waypoint
+                if dist < dist_limit:
+                    waypoints_distance_map[waypoint] = self.path_manager.efficient_path(start, goal)
+        print waypoints_distance_map.items()
+        return waypoints_distance_map
 
 if __name__ == "__main__":
     rospy.init_node("waypoint_server")
     rospy.loginfo("(Waypoint_Server) initializing...")
     server = WaypointServer()
     rospy.loginfo("[Waypoint_Server] ready.")
-    rospy.sleep(5)
-    server.get_closest_waypoint(152, 24)
+    server.get_waypoints_within_distance(152, 24)
     rospy.spin()
