@@ -23,7 +23,7 @@ def euclidean_distance(x1, y1, x2, y2):
 
 class ShortestPath:
 
-    occ_grid = OccupancyGrid()  # store map data in row (x) first order
+    occ_grid = None  # store map data in row (x) first order
     nodes = []  # all nodes in search
     index_nodes_map = {}
     frontier_nodes = deque()
@@ -37,6 +37,12 @@ class ShortestPath:
         self.path_pub = rospy.Publisher("/ratchet_path", Path, queue_size=1)
         self.cells_pub = rospy.Publisher("/ratchet_cells", GridCells, queue_size=10000)
         self.cells = deque()  # visualization purposes
+
+        if self.occ_grid == None:
+            rospy.loginfo("Waiting for map to be received...")
+            while self.occ_grid == None:
+                rospy.sleep(0.5)
+
 
     def index_from_xy(self, x, y):
         # TODO: ACCOUNT FOR MAP ORIGIN
@@ -169,13 +175,12 @@ class ShortestPath:
             #self.cells.pop()  # visualization purposes
             pass
             #rospy.loginfo("length of frontier nodes {0}".format(len(self.frontier_nodes)))
-        print "below - while not self.check_neighbours(self.frontier_nodes.pop()):"
-        print time.time() - cn_start_t
+        #print "below - while not self.check_neighbours(self.frontier_nodes.pop()):"
+        #print time.time() - cn_start_t
 
         node = self.get_node_from_index(self.index_goal)
         path_length = node.depth * self.occ_grid.info.resolution
-        print "shortest_path function time below"
-        print time.time() - start_t
+        print "shortest_path function time: {}".format(time.time()-start_t)
         self.generate_path(node)
         return path_length
 
