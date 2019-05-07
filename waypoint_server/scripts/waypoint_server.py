@@ -699,6 +699,10 @@ class WaypointServer:
             wn.terminating_waypoint = False
             wn.name = self.uuid_name_map[waypoint]
             if self.waypoint_graph.nodes[waypoint]["waypoint_type"] == WAYPOINT_TERMINATING:
+                try:
+                    wn.room_position_relative = self.waypoint_graph.nodes[waypoint]["room_position_relative"]
+                except KeyError:
+                    pass
                 wn.terminating_waypoint = True
                 wn.positions = self.waypoint_graph.nodes[waypoint]["position"].position
                 wn.orientation = self.waypoint_graph.nodes[waypoint]["position"].orientation
