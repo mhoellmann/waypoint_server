@@ -38,7 +38,7 @@ def euclidean_distance(point1, point2):
 
 class WaypointServer:
     def __init__(self):
-        self.server = InteractiveMarkerServer("waypoint_server")
+        self.im_server = InteractiveMarkerServer("waypoint_server")
         self.waypoint_graph = nx.Graph()
         self.next_waypoint_id = 0
         self.next_edge_id = 0
@@ -51,6 +51,7 @@ class WaypointServer:
         self.edge_line_publisher = rospy.Publisher("~edges", MarkerArray, queue_size=10)
         self.marker_frame = rospy.get_param("~marker_frame", "map")
         self.uuid_name_map = {}
+        self.uuid_menu_handler_map = {}
         self.door_data = {}
         self.filename = ""
 
@@ -243,11 +244,11 @@ class WaypointServer:
             app.exit()
             del(app)
 
-        InteractiveMarker = self.server.get(name)
+        InteractiveMarker = self.im_server.get(name)
         InteractiveMarker.description = new_name
         self.uuid_name_map.update({name: new_name})
-        self.server.insert(InteractiveMarker)
-        self.server.applyChanges()
+        self.im_server.insert(InteractiveMarker)
+        self.im_server.applyChanges()
         if new_name != old_name:
             rospy.loginfo("changed waypoint name from '{0}' to '{1}'".format(old_name, new_name))
 
@@ -255,8 +256,8 @@ class WaypointServer:
         self._clear_marker_edges(name)
         self.waypoint_graph.remove_node(name)
         del self.uuid_name_map[name]
-        self.server.erase(name)
-        self.server.applyChanges()
+        self.im_server.erase(name)
+        self.im_server.applyChanges()
 
     def _clear_marker_edges(self, name):
         # remove all edges to a waypoint
@@ -286,8 +287,8 @@ class WaypointServer:
             if u == v:
                 rospy.logwarn("Cannot connect a marker to itself")
                 return
-            u_pos = self.server.get(u).pose.position
-            v_pos = self.server.get(v).pose.position
+            u_pos = self.im_server.get(u).pose.position
+            v_pos = self.im_server.get(v).pose.position
             cost = euclidean_distance(u_pos,v_pos)
             # insert edge
             edge = self._make_edge(0.2, u_pos, v_pos, edge_type)
@@ -299,10 +300,10 @@ class WaypointServer:
     def set_marker_highlight(self, highlight=True, marker=None):
         if marker == None:
             marker = self.active_marker
-        m = self.server.get(self.active_marker)
+        m = self.im_server.get(self.active_marker)
         m.controls[0].markers[0].color.b = 1 if highlight==True else 0
-        self.server.insert(m)
-        self.server.applyChanges()
+        self.im_server.insert(m)
+        self.im_server.applyChanges()
         pass
 
     def update_edges(self):
@@ -351,6 +352,10 @@ class WaypointServer:
                 self._rename_marker(feedback.marker_name)
             elif handle == MENU_REMOVE:
                 self._remove_marker(feedback.marker_name)
+            elif handle == MENU_ROOM_LEFT:
+                self.set_room_position(feedback.marker_name, MENU_ROOM_LEFT)
+            elif handle == MENU_ROOM_RIGHT:
+                self.set_room_position(feedback.marker_name, MENU_ROOM_RIGHT)
 
         elif feedback.event_type == InteractiveMarkerFeedback.MOUSE_UP:
             if self.state == STATE_CONNECT:
@@ -376,12 +381,25 @@ class WaypointServer:
             if self.state == STATE_NONE:
                 self.state = STATE_REGULAR
 
-        self.server.applyChanges()
+        self.im_server.applyChanges()
+
+    def set_room_position(self, marker_uuid, position):
+        menu_handler = self.uuid_menu_handler_map[marker_uuid]
+        if position == MENU_ROOM_LEFT:
+            menu_handler.setCheckState(MENU_ROOM_RIGHT, MenuHandler.UNCHECKED)
+            menu_handler.setCheckState(MENU_ROOM_LEFT, MenuHandler.CHECKED)
+            self.waypoint_graph.node[marker_uuid]["room_position_relative"] = "Left"
+        elif position == MENU_ROOM_RIGHT:
+            menu_handler.setCheckState(MENU_ROOM_LEFT, MenuHandler.UNCHECKED)
+            menu_handler.setCheckState(MENU_ROOM_RIGHT, MenuHandler.CHECKED)
+            self.waypoint_graph.node[marker_uuid]["room_position_relative"] = "Right"
+
+        menu_handler.apply(self.im_server, marker_uuid)
 
     def move_feedback(self, feedback):
         pose = feedback.pose
 
-        self.server.setPose(feedback.marker_name, pose)
+        self.im_server.setPose(feedback.marker_name, pose)
 
         # correct all edges
         for u, v, data in self.waypoint_graph.edges([feedback.marker_name], data=True):
@@ -389,8 +407,8 @@ class WaypointServer:
                 data["marker"].points[0] = pose.position
             else:
                 data["marker"].points[1] = pose.position
-            u_pos = self.server.get(u).pose
-            v_pos = self.server.get(v).pose
+            u_pos = self.im_server.get(u).pose
+            v_pos = self.im_server.get(v).pose
             if self.waypoint_graph.node[u]["waypoint_type"] == WAYPOINT_REGULAR:
                 self.waypoint_graph.node[u]["position"] = u_pos.position
             elif self.waypoint_graph.node[u]["waypoint_type"] == WAYPOINT_TERMINATING:
@@ -401,9 +419,10 @@ class WaypointServer:
                 self.waypoint_graph.node[v]["position"] = v_pos
             data["cost"] = euclidean_distance(u_pos.position,v_pos.position)
         self.update_edges()
-        self.server.applyChanges()
+        self.im_server.applyChanges()
 
-    def insert_marker(self, position, waypoint_type=WAYPOINT_REGULAR, name=None, uuid=None, frame_id=None, floor_level=0):
+    def insert_marker(self, position, waypoint_type=WAYPOINT_REGULAR, name=None, uuid=None, frame_id=None, floor_level=0, relative_room_pos=None):
+        rospy.logwarn("insert marker called")
         if frame_id is None:
             frame_id = self.marker_frame
 
@@ -440,6 +459,12 @@ class WaypointServer:
         elif waypoint_type == WAYPOINT_TERMINATING:
             control.interaction_mode = InteractiveMarkerControl.MOVE_ROTATE
 
+        # insert into graph
+        if waypoint_type == WAYPOINT_REGULAR:
+            self.waypoint_graph.add_node(str(uuid), waypoint_type=waypoint_type, floor_level=floor_level, position=position)
+        elif waypoint_type == WAYPOINT_TERMINATING:
+            self.waypoint_graph.add_node(str(uuid), waypoint_type=waypoint_type, floor_level=floor_level, position=position, room_position_relative=relative_room_pos)
+
         # interactive menu for each marker
         menu_handler = MenuHandler()
         menu_handler.insert("Connect normal edge...", callback=self.process_feedback)
@@ -450,22 +475,38 @@ class WaypointServer:
         menu_handler.insert("Rename marker...", callback=self.process_feedback)
         menu_handler.insert("Remove marker", callback=self.process_feedback)
 
+        # we want to use our special callback function
+        self.im_server.insert(int_marker, self.process_feedback)
+
+        # handle relative room positions to terminating waypoints
+        if waypoint_type == WAYPOINT_TERMINATING:
+            room_position_menu  = menu_handler.insert("Select relative room position")
+            menu_handler.insert("Left", parent=room_position_menu, callback=self.process_feedback)
+            menu_handler.insert("Right", parent=room_position_menu, callback=self.process_feedback)
+            self.uuid_menu_handler_map[str(uuid)] = menu_handler
+            rospy.loginfo("relative room pos {0}".format(relative_room_pos))
+            if relative_room_pos == "Left":
+                self.set_room_position(str(uuid), MENU_ROOM_LEFT)
+            elif relative_room_pos == "Right":
+                self.set_room_position(str(uuid), MENU_ROOM_RIGHT)
+            else:
+                rospy.loginfo("the else is ever getting called")
+                rospy.loginfo("relative room pos {0}".format(relative_room_pos))
+                menu_handler.setCheckState(MENU_ROOM_RIGHT, MenuHandler.UNCHECKED)
+                menu_handler.setCheckState(MENU_ROOM_LEFT, MenuHandler.UNCHECKED)
+
         # make a box which also moves in the plane
         control.markers.append(self._make_marker(int_marker))
         control.always_visible = True
         int_marker.controls.append(control)
 
-        # we want to use our special callback function
-        self.server.insert(int_marker, self.process_feedback)
-        menu_handler.apply(self.server, int_marker.name)
+        menu_handler.apply(self.im_server, int_marker.name)
 
         # set different callback for POSE_UPDATE feedback
         pose_update = InteractiveMarkerFeedback.POSE_UPDATE
-        self.server.setCallback(int_marker.name, self.move_feedback, pose_update)
-        self.server.applyChanges()
+        self.im_server.setCallback(int_marker.name, self.move_feedback, pose_update)
+        self.im_server.applyChanges()
 
-        # insert into graph
-        self.waypoint_graph.add_node(str(uuid), waypoint_type=waypoint_type, floor_level=floor_level, position=position)
 
     def save_waypoints_service(self, request):
         if request.file_name:
@@ -520,8 +561,9 @@ class WaypointServer:
                 elif waypoint_type == WAYPOINT_TERMINATING:
                     pos = waypoint_data["position"].position
                     orientation = waypoint_data["position"].orientation
+                    room_position_relative = waypoint_data["room_position_relative"]
                     data["waypoints"].update({uuid: {"name": name, "x": pos.x, "y": pos.y, "z": pos.z, "floor_level":floor_level,
-                    "waypoint_type":waypoint_type, "orientation":{"x":orientation.x, "y":orientation.y, "w":orientation.w, "z":orientation.z}}})
+                        "waypoint_type":waypoint_type, "room_position_relative": room_position_relative, "orientation":{"x":orientation.x, "y":orientation.y, "w":orientation.w, "z":orientation.z}}})
             for u, v, edge_data in self.waypoint_graph.edges(data=True):
                 cost = edge_data['cost']
                 edge_type = edge_data['edge_type']
@@ -541,19 +583,24 @@ class WaypointServer:
                 data = yaml.load(f)
 
             self.clear_all_markers()
-            self.server.clear()
-            self.server.applyChanges()
+            self.im_server.clear()
+            self.im_server.applyChanges()
 
             for uuid, wp in data["waypoints"].items():
                 wp_type = wp["waypoint_type"]
                 if wp_type == WAYPOINT_REGULAR:
                     point = Point(wp["x"], wp["y"], wp["z"])
+                    self.insert_marker(position=point, uuid=uuid, name=wp['name'], waypoint_type=wp_type, floor_level=wp["floor_level"])
                 elif wp_type == WAYPOINT_TERMINATING:
                     point = Pose()
                     point.position = Point(wp["x"], wp["y"], wp["z"])
                     point.orientation = Quaternion(wp["orientation"]["x"], wp["orientation"]["y"],
-                        wp["orientation"]["z"], wp["orientation"]["w"])
-                self.insert_marker(position=point, uuid=uuid, name=wp['name'], waypoint_type=wp_type, floor_level=wp["floor_level"])
+                                                   wp["orientation"]["z"], wp["orientation"]["w"])
+                    try:
+                        room_position_relative = wp["room_position_relative"]
+                    except KeyError:
+                        room_position_relative = None
+                    self.insert_marker(position=point, uuid=uuid, name=wp['name'], waypoint_type=wp_type, floor_level=wp["floor_level"], relative_room_pos=room_position_relative)
 
             for edge in data["edges"]:
                 self._connect_markers(edge['u'], edge['v'], edge['cost'], edge['edge_type'], floor_level=edge["floor_level"])
@@ -565,16 +612,24 @@ class WaypointServer:
         return error_message
 
     def display_waypoints_from_graph(self):
+        #TODO remove unneccesary insert_marker calls
         self.clear_all_markers(clear_graph=False)
-        self.server.clear()
-        self.server.applyChanges()
+        self.im_server.clear()
+        self.im_server.applyChanges()
 
         for uuid, waypoint_data in self.waypoint_graph.nodes(data=True):
             name = self.uuid_name_map[uuid]
             position = waypoint_data["position"]
             wp_type = waypoint_data['waypoint_type']
             if waypoint_data["floor_level"] == self.floor_level:
-                self.insert_marker(position=position, uuid=uuid, name=name, waypoint_type=wp_type, floor_level=self.floor_level)
+                if wp_type == WAYPOINT_TERMINATING:
+                    try:
+                        room_position_relative = waypoint_data["room_position_relative"]
+                    except KeyError:
+                        room_position_relative = None
+                    self.insert_marker(position=position, uuid=uuid, name=name, waypoint_type=wp_type, floor_level=self.floor_level, relative_room_pos=room_position_relative)
+                else:
+                    self.insert_marker(position=position, uuid=uuid, name=name, waypoint_type=wp_type, floor_level=self.floor_level)
         for u, v, edge_data in self.waypoint_graph.edges(data=True):
             if edge_data["floor_level"] == self.floor_level:
                 self._connect_markers(u, v, edge_data['cost'], edge_data['edge_type'], floor_level=self.floor_level)
@@ -597,7 +652,7 @@ class WaypointServer:
             graph = self.waypoint_graph.subgraph(request.waypoints)
 
         for node in graph.nodes():
-            pose = self.server.get(node).pose
+            pose = self.im_server.get(node).pose
             ret.names.append(node)
             ret.positions.append(pose)
 
@@ -668,7 +723,7 @@ class WaypointServer:
                         response.doors_required.append(door_required)
                     response.waypoints[i].door_required = door_required
                 response.door_service_required =True
-            i +=1
+            i += 1
 
         self.show_active_path(waypoints)
         response.success = True
