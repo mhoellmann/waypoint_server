@@ -3,4 +3,5 @@ string name
 bool terminating_waypoint
 geometry_msgs/Point positions
 geometry_msgs/Quaternion orientation
+string room_position_relative
 string door_required
