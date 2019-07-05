@@ -1,6 +1,10 @@
 <launch>
 
   <!-- Waypoint Server for interactive waypoints in rviz -->
-  <node pkg="waypoint_server" type="waypoint_server.py" name="waypoint_server" output="screen" />
+  <node pkg="waypoint_server" type="waypoint_server.py" name="waypoint_server" output="screen">
+    <param name="waypoint_file" value="$(find waypoint_server)/waypoints/newmarket.yaml"/>
+    <param name="door_file" value="$(find waypoint_server)/waypoints/door_data.yaml"/>
+    <param name="floor_level" value="3"/>
+  </node>
  
 </launch>
