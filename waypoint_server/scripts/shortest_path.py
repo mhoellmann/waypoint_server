@@ -46,8 +46,8 @@ class ShortestPath:
 
     def index_from_xy(self, x, y):
         # TODO: ACCOUNT FOR MAP ORIGIN
-        # x = x + self.occ_grid.info.origin.x
-        # y = y + self.occ_grid.info.origin.y
+        x = x + self.occ_grid.info.origin.position.x
+        y = y + self.occ_grid.info.origin.position.y
         res = self.occ_grid.info.resolution
         width = self.occ_grid.info.width
         return int(round(y / res)) * width + int(round(x / res))
@@ -59,8 +59,8 @@ class ShortestPath:
         y_ = index / width
         y = y_ * res
         x = (index - y_ * width) * res
-        # x = x - self.occ_grid.info.origin.x
-        # y = y - self.occ_grid.info.origin.y
+        x = x - self.occ_grid.info.origin.position.x
+        y = y - self.occ_grid.info.origin.position.y
         return x, y
 
     def point_from_node(self, node):
