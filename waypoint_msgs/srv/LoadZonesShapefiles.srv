@@ -1,0 +1,5 @@
+string folder
+---
+bool success  # indicate successful run of triggered service
+string message  # information e.g. for error messages
+geometry_msgs/Polygon[] polygons

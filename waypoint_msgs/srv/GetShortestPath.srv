@@ -1,10 +1,14 @@
-geometry_msgs/Point location # x and y position
+geometry_msgs/PoseStamped start # x and y position
+geometry_msgs/PoseStamped target
+string startzone
+string targetzone
 int8 floor_number  # e.g. 1, 2
-string target # label of the target waypoint e.g. "903-314"
 ---
 bool success # indicate successful run of triggered service
 string message # information e.g. for error messages
 WaypointNode[] waypoints  # lidy of waypoints robot will travel to
+nav_msgs/Path[] path
+string[] controller
 bool door_service_required
 bool elevator_required
 string[] doors_required

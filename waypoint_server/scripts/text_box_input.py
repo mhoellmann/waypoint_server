@@ -1,15 +1,15 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python2
 from sys import argv
 from PyQt5.QtWidgets import QMainWindow, QWidget, QLabel, QLineEdit
 from PyQt5.QtWidgets import QApplication, QPushButton, QDesktopWidget
 from PyQt5.QtCore import QSize
 
 class InputWindow(QMainWindow):
-    def __init__(self, input_text):
+    def __init__(self, input_text, headline):
         QMainWindow.__init__(self)
 
         self.setMinimumSize(QSize(300, 100))
-        self.setWindowTitle("Rename Waypoint")
+        self.setWindowTitle(headline)
 
         self.current_text = input_text
         self.nameLabel = QLabel(self)
@@ -38,7 +38,7 @@ class InputWindow(QMainWindow):
         # center window
         qtRectangle = self.frameGeometry()
         centerPoint = QDesktopWidget().availableGeometry().center()
-        print centerPoint
+        print(centerPoint)
         qtRectangle.moveCenter(centerPoint)
         self.move(qtRectangle.topLeft())
 
@@ -53,13 +53,14 @@ class InputWindow(QMainWindow):
         return self.current_text
 
 class InputApp:
-    def __init__(self, waypoint_name):
-        self.old_name = waypoint_name
+    def __init__(self, input_text, headline):
+        self.input_text = input_text
+        self.headline = headline
 
     def create_app(self):
         if QApplication.instance() is None:
             app_instance = QApplication(argv)
-            rename_popup_window = InputWindow(self.old_name)
+            rename_popup_window = InputWindow(self.input_text, self.headline)
             rename_popup_window.show()
             app_instance.exec_()
             new_name = rename_popup_window.getNewName()

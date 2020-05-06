@@ -1,0 +1,7 @@
+geometry_msgs/PointStamped point
+string frame
+---
+bool success # indicate successful run of triggered service
+string message # information e.g. for error messages
+string zone
+string controller

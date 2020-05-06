@@ -12,6 +12,7 @@
 
   <buildtool_depend>catkin</buildtool_depend>
   <depend>interactive_markers</depend>
+  <depend>nav_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>waypoint_msgs</depend>
   <depend>diagnostic_msgs</depend>
@@ -20,4 +21,5 @@
   <depend>uuid_msgs</depend> 
   <depend>python-networkx</depend>
   <depend>python-yaml</depend>
+  <depend>jsk_recognition_msgs</depend>
 </package>

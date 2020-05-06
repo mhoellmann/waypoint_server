@@ -4,6 +4,7 @@ project(waypoint_msgs)
 find_package(catkin REQUIRED COMPONENTS
   message_generation
   std_msgs
+  nav_msgs
   geometry_msgs
   genmsg
   uuid_msgs
@@ -19,13 +20,18 @@ add_service_files(FILES
   RemoveEdge.srv
   SaveWaypoints.srv
   LoadWaypoints.srv
+  LoadZones.srv
+  LoadWaypointsShapefiles.srv
+  LoadZonesShapefiles.srv
   GetWaypointGraph.srv
   GetShortestPath.srv
   SetFloorLevel.srv
   LoadDoorData.srv
+  GetZone.srv
 )
 
 generate_messages(DEPENDENCIES
+  nav_msgs
   geometry_msgs
   std_msgs
   uuid_msgs
@@ -34,6 +40,7 @@ generate_messages(DEPENDENCIES
 catkin_package(CATKIN_DEPENDS
   message_generation
   message_runtime
+  nav_msgs
   geometry_msgs
   std_msgs
   genmsg

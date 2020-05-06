@@ -29,6 +29,13 @@ devel_isolated/
 .project
 .cproject
 
+# code stuff
+.vscode
+
+# maps
+waypoints/
+waypoint_server/launch/waypoint_server.launch
+
 # qcreator stuff
 CMakeLists.txt.user
 
@@ -49,3 +56,4 @@ qtcreator-*
 
 # Catkin custom files
 CATKIN_IGNORE
+

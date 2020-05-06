@@ -1,7 +1,9 @@
-string uuid
+uuid_msgs/UniqueID uuid
 string name
 bool terminal_waypoint
 geometry_msgs/Point positions
 geometry_msgs/Quaternion orientation
 string door_required
 string elevator_required
+string zone1
+string zone2

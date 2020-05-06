@@ -4,11 +4,13 @@ project(waypoint_server)
 find_package(catkin REQUIRED COMPONENTS
   diagnostic_msgs
   geometry_msgs
+  nav_msgs
   interactive_markers
   rospy
   uuid_msgs
   waypoint_msgs
   unique_id
+  jsk_recognition_msgs
 )
 
 catkin_python_setup()
@@ -16,11 +18,13 @@ catkin_python_setup()
 catkin_package(CATKIN_DEPENDS 
   diagnostic_msgs
   geometry_msgs
+  nav_msgs
   interactive_markers
   rospy
   uuid_msgs
   waypoint_msgs
   unique_id
+  jsk_recognition_msgs
 )
 
 include_directories(${catkin_INCLUDE_DIRS})
